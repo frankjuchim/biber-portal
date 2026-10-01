@@ -113,7 +113,44 @@ Geheimnisse erzeugen: `./build.sh secrets` (oder `openssl rand -base64 48`).
 
 `PORT` (80) und `DATA_DIR` (`/app/data`) setzt bereits das Dockerfile – nicht anlegen.
 
-### 3. Deployen
+### 3. Automatisch deployen per GitHub-Webhook (empfohlen)
+
+Bei jedem Push auf den gewählten Branch holt CapRover den Code von GitHub, baut das Image (`captain-definition` → `Dockerfile`) und startet es neu. **Die Tests laufen beim Bauen mit** (erste Stufe im Dockerfile): Schlägt ein Test fehl, bricht der Build ab und die bisherige Version bleibt online.
+
+**a) Deploy-Key anlegen** (nur Lesezugriff, nur auf dieses Repository – besser als ein persönliches Token):
+
+```bash
+ssh-keygen -t ed25519 -C "caprover-biber" -N "" -f caprover-biber
+```
+
+- GitHub → Repository → **Settings → Deploy keys → Add deploy key**: Titel `CapRover`, Inhalt von `caprover-biber.pub` einfügen, **„Allow write access“ aus lassen**.
+- Den privaten Schlüssel (`caprover-biber`, ohne `.pub`) braucht gleich CapRover. Danach beide Dateien löschen bzw. sicher ablegen.
+
+**b) CapRover verbinden:** App → **Deployment → „Method 3: Deploy from Github/Bitbucket/Gitlab“**
+
+| Feld | Wert |
+|---|---|
+| Repository | `git@github.com:frankjuchim/biber-portal.git` |
+| Branch | `main` |
+| Username / Password | leer lassen |
+| SSH Key | Inhalt der Datei `caprover-biber` (privater Schlüssel, inkl. `-----BEGIN …` / `-----END …`) |
+
+**„Save & Update“** – CapRover zeigt danach oberhalb der Felder eine **Webhook-URL** (`https://captain.…/api/v2/user/apps/webhooks/triggerbuild?namespace=captain&token=…`). Einmal **„Force Build“** klicken, um den ersten Build zu starten und im Build-Log zu prüfen, dass alles durchläuft (`# pass … # fail 0`).
+
+**c) Webhook in GitHub:** Repository → **Settings → Webhooks → Add webhook**
+
+| Feld | Wert |
+|---|---|
+| Payload URL | die Webhook-URL aus CapRover (enthält ein Token – geheim halten) |
+| Content type | `application/json` |
+| Secret | leer |
+| Events | **Just the push event** |
+
+Fertig: Jeder Push bzw. jeder gemergte Pull Request auf `main` wird automatisch ausgeliefert. Zugangsdaten bleiben dabei erhalten, solange das Persistent Directory `/app/data` eingerichtet ist (Schritt 1) und `DATA_KEY` gleich bleibt.
+
+> Alternative ohne SSH-Key: In CapRover Username = GitHub-Benutzername und Password = *Fine-grained Personal Access Token* (nur dieses Repository, Berechtigung „Contents: Read-only“), Repository dann als `github.com/frankjuchim/biber-portal`.
+
+### 4. Manuell deployen (ohne GitHub)
 
 ```bash
 ./build.sh deploy            # App interaktiv auswählen
@@ -126,6 +163,9 @@ Alternativ `./build.sh` ausführen und `dist/biber-portal.tar` in CapRover unter
 
 | Meldung | Ursache |
 |---|---|
+| Build-Log: `not ok … # fail 1` | Ein Test schlägt fehl – der Build bricht absichtlich ab, die alte Version läuft weiter. Fehler beheben und erneut pushen. |
+| Build-Log: `Permission denied (publickey)` / `Repository not found` | Deploy-Key fehlt in GitHub, falscher (öffentlicher statt privater) Schlüssel in CapRover, oder Repository nicht im SSH-Format eingetragen. |
+| Push löst keinen Build aus | GitHub → Settings → Webhooks → „Recent Deliveries“ prüfen; Branch in CapRover muss zum gepushten Branch passen. |
 | IServ: „Redirect-URI ist ungültig“ | Weiterleitungs-URI in IServ ≠ `BASE_URL/auth/callback`, oder `BASE_URL`/`NODE_ENV` fehlen (dann wird `localhost` gesendet). |
 | Log: `Login-Start fehlgeschlagen … ConnectTimeoutError` | Der Server erreicht IServ nicht (Firewall/Länder- oder IP-Sperre in IServ, falsche `ISERV_URL`). Test auf dem Server: `curl https://<iserv>/.well-known/openid-configuration`. |
 | Start bricht ab: „Datenspeicher konnte nicht entschlüsselt werden“ | `DATA_KEY` wurde geändert. Alten Schlüssel wieder eintragen. |
