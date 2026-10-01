@@ -6,7 +6,7 @@ Schülerinnen und Schüler melden sich mit ihrem **IServ-Konto (Single-Sign-On, 
 
 **Schüleransicht**
 - Anmeldung nur über IServ; das IServ-Passwort sieht das Portal nie.
-- Drei Schritte: Benutzername kopieren → Passwort kopieren (verdeckt, per Auge sichtbar) → „Zum Schnupper-Biber“ bzw. „Zum Wettbewerb anmelden“ (neuer Tab).
+- Drei Schritte: Benutzername kopieren → Passwort kopieren (verdeckt, per Auge sichtbar) → **„Direkt einloggen“**: Das Portal schickt Benutzername und Passwort per Formular an die Biber-Anmeldeseite, im neuen Tab ist man sofort angemeldet. Daneben gibt es „Login-Seite öffnen“ zum manuellen Einfügen. Ist der Direkt-Login ausgeschaltet, gibt es wie bisher „Zum Schnupper-Biber“ bzw. „Zum Wettbewerb“.
 - Phasenkarte mit Countdown bis zu den Biberwochen und Zeitleiste; Zugangskarte druckbar.
 - Ohne hinterlegte Daten erscheint ein freundlicher Hinweis an die Lehrkraft.
 
@@ -14,7 +14,7 @@ Schülerinnen und Schüler melden sich mit ihrem **IServ-Konto (Single-Sign-On, 
 - Import des Biber-Exports als **CSV oder Excel (.xlsx)** mit zusätzlicher Spalte **`IServ`** (Accountname). Vorschau mit Prüfhinweisen, dann „Ergänzen“ oder „Ersetzen“.
 - Tabelle mit Suche/Filter, Zuordnung per Accountname direkt nachtragen, Vorschau „als Schüler:in“, Abrufstatus.
 - **Einzelne Zugänge per Formular** anlegen (Bereich „Einzeln.“, mit „Anlegen & nächster“ für mehrere hintereinander) und jeden Eintrag über das Stift-Symbol bearbeiten (Name, Klasse, Benutzername, Passwort, IServ-Account). Doppelte Benutzernamen oder IServ-Accounts werden abgewiesen; Abrufzähler bleiben beim Bearbeiten erhalten.
-- Phase (automatisch/manuell), Termine, Ziel-Adressen, Hinweistext, Schalter „Zugangsdaten sichtbar“.
+- Phase (automatisch/manuell), Termine, Ziel-Adressen, Hinweistext, Schalter „Zugangsdaten sichtbar“ und „Direkt-Login“ (Standard: an; ausschalten, falls der Biber seine Anmeldeseite ändert und der Direkt-Login nicht mehr klappt).
 - Nach dem Wettbewerb: alle Zugangsdaten endgültig löschen.
 
 ## Ablauf für die Lehrkraft
@@ -144,7 +144,7 @@ Im Mock-IServ gibt es u. a. `max.mustermann`, `erika.musterfrau`, `lena.ohnedate
 - Gespeichert werden nur: Biber-Benutzername, Biber-Passwort, IServ-Accountname, Name/Klasse aus dem Export sowie Abrufzeitpunkte. IServ-Tokens werden nicht gespeichert.
 - Datenspeicher vollständig verschlüsselt; Sitzungscookie signiert, `HttpOnly`, `SameSite=Lax`, `Secure` unter HTTPS; CSRF-Schutz für alle Formulare; strikte Content-Security-Policy; Seiten mit Zugangsdaten werden nicht zwischengespeichert (`no-store`).
 - Nach dem Wettbewerb lassen sich alle Zugangsdaten in der Verwaltung mit einem Schritt löschen.
-- Eine automatische Anmeldung beim Informatik-Biber (Zugangsdaten an fremde Seite senden) ist bewusst nicht eingebaut – das Portal zeigt die Daten und leitet weiter.
+- Direkt-Login: Der Button sendet Benutzername und Passwort aus dem Browser der Schülerin oder des Schülers direkt per HTTPS an die eingestellte Anmelde-Adresse (`wettbewerb.informatik-biber.de`) – genau das, was beim manuellen Einfügen passiert. Der Portal-Server selbst nimmt keinen Kontakt zum Biber auf. Die Content-Security-Policy erlaubt Formulare nur an das Portal selbst und an die Herkunft der Anmelde-Adresse.
 
 ## Projektstruktur
 

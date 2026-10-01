@@ -98,6 +98,10 @@ test('kompletter Ablauf', async () => {
   assert.ok(!page.text.includes('biber-max'));
   assert.equal(page.res.headers.get('cache-control'), 'no-store');
   assert.match(page.res.headers.get('content-security-policy'), /script-src 'self'/);
+  // Direkt-Login: Formular an die Biber-Anmeldeseite, von der CSP erlaubt
+  assert.match(page.text, /<form class="go" method="post" action="https:\/\/wettbewerb\.informatik-biber\.de\/index\.php\?action=login" target="_blank"/);
+  assert.match(page.text, /name="username" value="biber-erika"/);
+  assert.match(page.res.headers.get('content-security-policy'), /form-action 'self' https:\/\/wettbewerb\.informatik-biber\.de/);
 
   // Kein Admin-Zugriff
   const forb = await erika.go('/admin');
@@ -147,7 +151,7 @@ test('einzelne Zugänge per Formular anlegen und bearbeiten', async () => {
   // Sichtbarkeit wieder einschalten (vorheriger Test hat sie ausgeschaltet)
   page = await admin.go('/admin/settings', {
     method: 'POST', headers: form,
-    body: new URLSearchParams({ _csrf: csrfOf(page.text), phaseMode: 'auto', schnupperStart: '2026-09-14', schnupperEnd: '2026-11-06', contestStart: '2026-11-09', contestEnd: '2026-11-20', loginUrl: 'https://wettbewerb.informatik-biber.de/index.php?action=login', schnupperUrl: 'https://wettbewerb.informatik-biber.de/index.php?action=login', notice: '', credentialsVisible: '1' }),
+    body: new URLSearchParams({ _csrf: csrfOf(page.text), phaseMode: 'auto', schnupperStart: '2026-09-14', schnupperEnd: '2026-11-06', contestStart: '2026-11-09', contestEnd: '2026-11-20', loginUrl: 'https://wettbewerb.informatik-biber.de/index.php?action=login', schnupperUrl: 'https://wettbewerb.informatik-biber.de/index.php?action=login', notice: '', credentialsVisible: '1', directLogin: '1' }),
   });
 
   // Anlegen mit „Anlegen & nächster“ → leeres Formular mit Erfolgsmeldung

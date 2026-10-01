@@ -18,6 +18,14 @@ import { adminPage, importPreviewPage, credentialFormPage } from './lib/admin-vi
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+function loginOrigin(url) {
+  try {
+    const u = new URL(url);
+    if (u.protocol === 'https:') return u.origin;
+  } catch { /* ungültige Adresse */ }
+  return "'self'";
+}
+
 export function createApp(cfg = loadConfig()) {
   const store = new Store(cfg.dataDir, cfg.dataKey);
   const oidc = createOidcClient(cfg.oidc);
@@ -36,7 +44,8 @@ export function createApp(cfg = loadConfig()) {
           'script-src': ["'self'"],
           'style-src': ["'self'"],
           'img-src': ["'self'", 'data:'],
-          'form-action': ["'self'"],
+          // Direkt-Login: Formular darf an die Biber-Anmeldeseite senden
+          'form-action': ["'self'", () => loginOrigin(store.settings.loginUrl)],
           'frame-ancestors': ["'none'"],
           'upgrade-insecure-requests': cfg.isProd ? [] : null,
         },
@@ -302,6 +311,7 @@ export function createApp(cfg = loadConfig()) {
       schnupperUrl: b.schnupperUrl,
       notice: String(b.notice || '').slice(0, 300).trim(),
       credentialsVisible: b.credentialsVisible === '1',
+      directLogin: b.directLogin === '1',
     }, actor(req));
     setFlash(req, 'success', 'Einstellungen gespeichert.');
     res.redirect('/admin#einstellungen');
