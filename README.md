@@ -182,6 +182,7 @@ Alternativ `./build.sh` ausführen und `dist/biber-portal.tar` in CapRover unter
 | Start bricht ab: „Datenspeicher konnte nicht entschlüsselt werden“ | `DATA_KEY` wurde geändert. Alten Schlüssel wieder eintragen. |
 | Anmeldung schlägt fehl, Log: `invalid_scope` | Scope `iserv:roles` ist im IServ-Client nicht freigegeben. In IServ freigeben oder `OIDC_SCOPE=openid profile email` setzen. |
 | Lehrkraft sieht keinen Menüpunkt „Karten“ | Rolle heißt in IServ anders: Namen unter `TEACHER_ROLES` ergänzen (die erkannte Rolle steht bei Admins auf der Seite „Karten“), oder Account in `TEACHER_ACCOUNTS` eintragen. Danach neu anmelden. |
+| Log: `Token-Abruf fehlgeschlagen (400): Grant type is unauthorized for this client` | Im IServ-Client ist der Grant-Typ **„Authorization Code“** nicht angehakt. In IServ → Single-Sign-On → Client bearbeiten freigeben. |
 | Start bricht ab: „Umgebungsvariable … fehlt“ | Pflichtvariable nicht gesetzt (siehe Tabelle oben). |
 
 ## build.sh

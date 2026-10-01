@@ -253,5 +253,6 @@ test('Login-Fehler werden verständlich erklärt', async () => {
   assert.match(loginHint('Ungültiger oder abgelaufener Anmeldevorgang (state).'), /Cookie/);
   assert.match(loginHint('Token-Abruf fehlgeschlagen (401): invalid_client'), /Client-ID/);
   assert.match(loginHint('unexpected "iss" claim value'), /ISERV_URL/);
+  assert.match(loginHint('Token-Abruf fehlgeschlagen (400): Grant type is unauthorized for this client'), /Authorization Code/);
   assert.match(loginHint('irgendwas'), /App-Log/);
 });

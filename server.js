@@ -30,6 +30,7 @@ export function loginHint(msg = '') {
   if (/redirect/i.test(m)) return 'Ursache: Weiterleitungs-URI passt nicht – in IServ muss genau BASE_URL/auth/callback stehen.';
   if (/state/i.test(m)) return 'Ursache: Die Sitzung ging unterwegs verloren (Cookie). Bitte die Seite über die richtige Adresse (BASE_URL) öffnen und erneut versuchen.';
   if (/abgelaufen/i.test(m)) return 'Ursache: Anmeldevorgang abgelaufen. Bitte erneut versuchen.';
+  if (/unauthorized_client|grant type/i.test(m)) return 'Ursache: Im IServ-Client ist der Grant-Typ „Authorization Code“ nicht freigegeben (Verwaltung → System → Single-Sign-On → Client bearbeiten).';
   if (/invalid_client|401/i.test(m)) return 'Ursache: Client-ID oder Client-Geheimnis passen nicht zu IServ (OIDC_CLIENT_ID / OIDC_CLIENT_SECRET).';
   if (/invalid_grant/i.test(m)) return 'Ursache: IServ hat den Anmeldecode abgelehnt (doppelt verwendet, abgelaufen oder Weiterleitungs-URI abweichend). Bitte erneut versuchen.';
   if (/Accountnamen/i.test(m)) return 'Ursache: IServ hat keinen Accountnamen geliefert – im IServ-Client den Scope „profile“ erlauben.';
