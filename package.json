@@ -1,0 +1,26 @@
+{
+  "name": "biber-portal",
+  "version": "1.0.0",
+  "description": "IServ-SSO-Portal: zeigt Schülerinnen und Schülern ihre Zugangsdaten für den Informatik-Biber und leitet zur Anmeldung bzw. zum Schnupper-Biber weiter.",
+  "type": "module",
+  "main": "server.js",
+  "private": true,
+  "engines": {
+    "node": ">=20.10"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --env-file=.env server.js",
+    "mock-iserv": "node tools/mock-iserv.js",
+    "test": "node --test --test-concurrency=1 test/*.test.js"
+  },
+  "dependencies": {
+    "cookie-session": "^2.1.0",
+    "csv-parse": "^5.5.6",
+    "exceljs": "^4.4.0",
+    "express": "^4.21.2",
+    "helmet": "^8.0.0",
+    "jose": "^5.9.6",
+    "multer": "^2.0.0"
+  }
+}
