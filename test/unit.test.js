@@ -101,3 +101,26 @@ test('Phasen nach Datum (Europe/Berlin)', () => {
   assert.equal(currentPhase({ ...st, phaseMode: 'wettbewerb' }, new Date('2026-09-30T10:00:00Z')), 'wettbewerb');
   assert.equal(daysUntil('2026-11-09', new Date('2026-09-30T10:00:00Z')), 40);
 });
+
+test('Lehrkräfte werden über IServ-Rollen, Gruppen oder Accountliste erkannt', async () => {
+  const { detectTeacher, claimLabels, groupsOf, credentialsForGroups } = await import('../lib/teacher.js');
+  const cfg = { admins: new Set(['admin.konto']), teacherAccounts: new Set(['extra.lehrer']), teacherRoles: ['lehrer', 'lehrkraft'] };
+  // IServ-Format (Scope iserv:roles / iserv:groups)
+  assert.ok(detectTeacher({ roles: [{ uuid: 'x', id: 'ROLE_1', displayName: 'Lehrer' }] }, 'a.b', cfg));
+  assert.ok(detectTeacher({ groups: [{ id: 'g', act: 'lehrkraft', name: 'Lehrkräfte' }] }, 'a.b', cfg));
+  assert.ok(detectTeacher({ roles: ['LEHRER'] }, 'a.b', cfg));
+  assert.ok(detectTeacher({}, 'admin.konto', cfg));
+  assert.ok(detectTeacher({}, 'extra.lehrer', cfg));
+  assert.ok(!detectTeacher({ roles: [{ displayName: 'Schüler' }], groups: [{ act: 'klasse.8b', name: 'Klasse 8b' }] }, 'max.m', cfg));
+  assert.ok(!detectTeacher({ name: 'Lehrer' }, 'max.m', cfg)); // nur Rollen-/Gruppen-Claims zählen
+  assert.deepEqual(claimLabels({ roles: [{ displayName: 'Lehrer', id: 'ROLE_T' }] }).sort(), ['Lehrer', 'ROLE_T']);
+
+  const creds = [
+    { username: 'u3', className: '10a', lastName: 'Zander' },
+    { username: 'u1', className: '9b', lastName: 'Arndt' },
+    { username: 'u2', className: '10a', lastName: 'Becker' },
+    { username: 'u4', className: '' },
+  ];
+  assert.deepEqual(groupsOf(creds).map((g) => [g.key, g.count]), [['9b', 1], ['10a', 2], ['–', 1]]);
+  assert.deepEqual(credentialsForGroups(creds, ['10a', '9b']).map((c) => c.username), ['u1', 'u2', 'u3']);
+});

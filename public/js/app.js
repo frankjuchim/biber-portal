@@ -150,6 +150,29 @@
     try { localStorage.setItem('biber-theme', next); } catch (e) { /* egal */ }
   });
 
+  // ---------- Lehrkräfte: Kartendruck ----------
+  document.querySelectorAll('[data-print-page]').forEach(function (btn) {
+    btn.addEventListener('click', function () { window.print(); });
+  });
+  var cardsForm = document.querySelector('[data-cards-form]');
+  if (cardsForm) {
+    var boxes = cardsForm.querySelectorAll('input[name="g"]');
+    var submit = cardsForm.querySelector('[data-cards-submit]');
+    var all = cardsForm.querySelector('[data-select-all]');
+    var sync = function () {
+      var n = cardsForm.querySelectorAll('input[name="g"]:checked').length;
+      if (submit) submit.disabled = n === 0;
+      if (all) all.textContent = n === boxes.length ? 'Keine auswählen' : 'Alle auswählen';
+    };
+    boxes.forEach(function (b) { b.addEventListener('change', sync); });
+    if (all) all.addEventListener('click', function () {
+      var on = cardsForm.querySelectorAll('input[name="g"]:checked').length !== boxes.length;
+      boxes.forEach(function (b) { b.checked = on; });
+      sync();
+    });
+    sync();
+  }
+
   // ---------- Zugangsdaten ----------
   var card = document.querySelector('[data-cred]');
   if (!card) return;

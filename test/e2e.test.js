@@ -200,3 +200,36 @@ test('einzelne Zugänge per Formular anlegen und bearbeiten', async () => {
   assert.match(page.text, /Neu-Pw-2/);
   assert.ok(!page.text.includes('Erst-Pw-1'));
 });
+
+test('Lehrkraft (IServ-Rolle) druckt Zugangskarten einer Gruppe', async () => {
+  const teacher = browser();
+  let page = await login(teacher, 'petra.pauker'); // Rolle „Lehrer“ über iserv:roles
+  assert.match(page.url, /\/karten$/);
+  assert.match(page.text, /Zugangskarten\./);
+  assert.match(page.text, /IServ-Rolle: Lehrer/);
+  assert.match(page.text, /name="g" value="8c"/);
+  assert.ok(!page.text.includes('Verwaltung</span>'));
+
+  page = await teacher.go('/karten/druck?g=8c&n=10&split=1');
+  assert.match(page.text, /class="sheet n10"/);
+  assert.match(page.text, /biber-lena/);
+  assert.match(page.text, /Neu-Pw-2/);
+  assert.ok(!page.text.includes('biber-erika')); // andere Gruppe nicht dabei
+  assert.equal(page.res.headers.get('cache-control'), 'no-store');
+
+  // Verwaltung bleibt gesperrt
+  assert.equal((await teacher.go('/admin')).res.status, 403);
+
+  // Schüler:innen haben keinen Zugriff
+  const max = browser();
+  await login(max, 'max.mustermann');
+  assert.equal((await max.go('/karten')).res.status, 403);
+  assert.equal((await max.go('/karten/druck?g=8c')).res.status, 403);
+
+  // Druck wird protokolliert
+  const admin = browser();
+  page = await login(admin, 'andre.bodendiek');
+  page = await admin.go('/admin');
+  assert.match(page.text, /Karten gedruckt: 8c \(1\)/);
+});
+

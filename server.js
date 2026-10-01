@@ -13,6 +13,8 @@ import { Store } from './lib/store.js';
 import { createOidcClient } from './lib/oidc.js';
 import { parseCredentialFile } from './lib/importer.js';
 import { currentPhase, PHASES } from './lib/phase.js';
+import { detectTeacher, roleNames, groupsOf, credentialsForGroups } from './lib/teacher.js';
+import { teacherPage, cardsSheet, LAYOUTS } from './lib/teacher-views.js';
 import { layout, landingPage, studentPage, messagePage } from './lib/views.js';
 import { adminPage, importPreviewPage, credentialFormPage } from './lib/admin-views.js';
 
@@ -102,6 +104,14 @@ export function createApp(cfg = loadConfig()) {
     }
     next();
   };
+  const requireTeacher = (req, res, next) => {
+    const u = req.session.user;
+    if (!u) return res.redirect('/');
+    if (!(u.isTeacher || cfg.admins.has(u.account))) {
+      return render(req, res, { title: 'Kein Zugriff', body: messagePage({ title: 'Kein Zugriff.', text: 'Nur für Lehrkräfte.', action: { href: '/', label: 'Zurück' } }) }, 403);
+    }
+    next();
+  };
   const actor = (req) => req.session.user?.account || 'unbekannt';
   const setFlash = (req, type, text) => { req.session.flash = { type, text }; };
   const takeFlash = (req) => { const f = req.session.flash; req.session.flash = null; return f; };
@@ -115,6 +125,8 @@ export function createApp(cfg = loadConfig()) {
       name,
       givenName: claims.given_name || '',
       isAdmin: cfg.admins.has(account),
+      isTeacher: detectTeacher(claims, account, cfg),
+      roles: roleNames(claims),
     };
   }
 
@@ -158,7 +170,9 @@ export function createApp(cfg = loadConfig()) {
       const claims = await oidc.finishLogin({ code: String(req.query.code || ''), verifier: pending.verifier, nonce: pending.nonce });
       establishSession(req, claims);
       req.session.csrf = crypto.randomBytes(24).toString('base64url'); // neue Sitzung, neues Token
-      res.redirect(req.session.user.isAdmin && !store.byAccount(req.session.user.account) ? '/admin' : '/');
+      const u = req.session.user;
+      const own = store.byAccount(u.account);
+      res.redirect(u.isAdmin && !own ? '/admin' : u.isTeacher && !own ? '/karten' : '/');
     } catch (err) {
       console.error('[auth] Callback fehlgeschlagen:', err.message);
       req.session.loginError = 'Anmeldung hat nicht geklappt. Bitte noch einmal.';
@@ -315,6 +329,22 @@ export function createApp(cfg = loadConfig()) {
     }, actor(req));
     setFlash(req, 'success', 'Einstellungen gespeichert.');
     res.redirect('/admin#einstellungen');
+  });
+
+  // ---------- Lehrkräfte: Zugangskarten ----------
+  app.get('/karten', requireTeacher, (req, res) => {
+    const creds = store.all();
+    render(req, res, { title: 'Zugangskarten', page: 'teacher', body: teacherPage({ user: req.session.user, groups: groupsOf(creds), total: creds.length, roles: req.session.user.roles }) });
+  });
+
+  app.get('/karten/druck', requireTeacher, (req, res) => {
+    const keys = [].concat(req.query.g || []).map(String).slice(0, 200);
+    const perPage = LAYOUTS[req.query.n] ? Number(req.query.n) : 8;
+    const groups = groupsOf(store.all()).filter((g) => keys.includes(g.key));
+    if (!groups.length) return res.redirect('/karten');
+    const creds = credentialsForGroups(store.all(), groups.map((g) => g.key));
+    store.note(actor(req), 'print', `Karten gedruckt: ${groups.map((g) => g.label).join(', ')} (${creds.length})`);
+    render(req, res, { title: 'Karten drucken', page: 'cards', body: cardsSheet({ cfg, creds, perPage, split: req.query.split !== '0', groupLabels: groups.map((g) => g.label) }) });
   });
 
   app.get('/admin/preview/:id', requireAdmin, (req, res) => {

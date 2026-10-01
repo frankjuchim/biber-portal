@@ -10,6 +10,11 @@ Schülerinnen und Schüler melden sich mit ihrem **IServ-Konto (Single-Sign-On, 
 - Phasenkarte mit Countdown bis zu den Biberwochen und Zeitleiste; Zugangskarte druckbar.
 - Ohne hinterlegte Daten erscheint ein freundlicher Hinweis an die Lehrkraft.
 
+**Zugangskarten für Lehrkräfte** (Menüpunkt „Karten“)
+- Lehrkräfte werden über IServ erkannt: Rolle bzw. Gruppe „Lehrer“ (Scope `iserv:roles`, siehe `TEACHER_ROLES`). Zusätzlich gelten alle `ADMIN_ACCOUNTS` und `TEACHER_ACCOUNTS`.
+- Eine oder mehrere Gruppen (Klasse/Kurs aus dem Biber-Export) wählen → druckfertiger DIN-A4-Bogen mit 8, 10 oder 12 Karten pro Blatt, Schnittlinien, Schullogo, Name, Klasse, Benutzername, Passwort und Anmeldeadresse; auf Wunsch beginnt jede Gruppe auf einem neuen Blatt.
+- Drucken mit Skalierung 100 % und ohne Kopf-/Fußzeilen. Jeder Druck wird im Protokoll der Verwaltung vermerkt. Lehrkräfte sehen die Verwaltung nicht.
+
 **Verwaltung** (nur Accounts aus `ADMIN_ACCOUNTS`)
 - Import des Biber-Exports als **CSV oder Excel (.xlsx)** mit zusätzlicher Spalte **`IServ`** (Accountname). Vorschau mit Prüfhinweisen, dann „Ergänzen“ oder „Ersetzen“.
 - Tabelle mit Suche/Filter, Zuordnung per Accountname direkt nachtragen, Vorschau „als Schüler:in“, Abrufstatus.
@@ -36,7 +41,7 @@ In IServ als Administrator: **Verwaltung → System → Single-Sign-On → Hinzu
 | Client-ID / Client-Geheimnis | frei wählen bzw. übernehmen → in `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` |
 | Weiterleitungs-URI | `https://<Ihre-Portal-Adresse>/auth/callback` |
 | Grant-Typ | Authorization Code |
-| Scopes | `openid`, `profile`, `email` |
+| Scopes | `openid`, `profile`, `email`, **`iserv:roles`** (für die Erkennung von Lehrkräften; optional zusätzlich `iserv:groups`) |
 | Vertrauenswürdig | ja (dann entfällt die Zustimmungsabfrage) |
 | Beschränkung auf Gruppen/Rollen | optional, z. B. nur Schüler:innen + Informatik-Lehrkräfte |
 
@@ -91,7 +96,9 @@ Geheimnisse erzeugen: `./build.sh secrets` (oder `openssl rand -base64 48`).
 | `IMPRESSUM_URL` | Impressum auf maxe-online.de | Link „Impressum“ in der Fußzeile; leer = ausblenden |
 | `DATENSCHUTZ_URL` | Datenschutz auf maxe-online.de | Link „Datenschutz“ in der Fußzeile; leer = ausblenden |
 | `TRUST_PROXY` | `1` (in Produktion) | Anzahl vertrauenswürdiger Proxys; hinter CapRover/nginx passt `1` |
-| `OIDC_SCOPE` | `openid profile email` | Angefragte Scopes |
+| `OIDC_SCOPE` | `openid profile email iserv:roles` | Angefragte Scopes. Ist `iserv:roles` im IServ-Client nicht freigegeben, schlägt die Anmeldung fehl – dann freigeben oder hier entfernen (Lehrkräfte dann nur über `TEACHER_ACCOUNTS`). Für Erkennung über Gruppen `iserv:groups` ergänzen. |
+| `TEACHER_ROLES` | `Lehrer,Lehrerin,Lehrkraft,Lehrkräfte,…,Teacher` | Namen von IServ-Rollen oder -Gruppen (Anzeigename oder Accountname, Groß-/Kleinschreibung egal), deren Mitglieder als Lehrkraft gelten und Zugangskarten drucken dürfen |
+| `TEACHER_ACCOUNTS` | leer | Zusätzliche IServ-Accounts mit Kartendruck, kommagetrennt |
 | `OIDC_ACCOUNT_CLAIM` | `preferred_username` | Claim, der den IServ-Accountnamen enthält |
 | `OIDC_TOKEN_AUTH_METHOD` | automatisch | `client_secret_basic` oder `client_secret_post` – nur setzen, wenn der Token-Abruf scheitert |
 | `OIDC_PKCE` | `true` | Auf `false`, falls IServ PKCE ablehnt |
@@ -114,6 +121,8 @@ Alternativ `./build.sh` ausführen und `dist/biber-portal.tar` in CapRover unter
 | IServ: „Redirect-URI ist ungültig“ | Weiterleitungs-URI in IServ ≠ `BASE_URL/auth/callback`, oder `BASE_URL`/`NODE_ENV` fehlen (dann wird `localhost` gesendet). |
 | Log: `Login-Start fehlgeschlagen … ConnectTimeoutError` | Der Server erreicht IServ nicht (Firewall/Länder- oder IP-Sperre in IServ, falsche `ISERV_URL`). Test auf dem Server: `curl https://<iserv>/.well-known/openid-configuration`. |
 | Start bricht ab: „Datenspeicher konnte nicht entschlüsselt werden“ | `DATA_KEY` wurde geändert. Alten Schlüssel wieder eintragen. |
+| Anmeldung schlägt fehl, Log: `invalid_scope` | Scope `iserv:roles` ist im IServ-Client nicht freigegeben. In IServ freigeben oder `OIDC_SCOPE=openid profile email` setzen. |
+| Lehrkraft sieht keinen Menüpunkt „Karten“ | Rolle heißt in IServ anders: Namen unter `TEACHER_ROLES` ergänzen (die erkannte Rolle steht bei Admins auf der Seite „Karten“), oder Account in `TEACHER_ACCOUNTS` eintragen. Danach neu anmelden. |
 | Start bricht ab: „Umgebungsvariable … fehlt“ | Pflichtvariable nicht gesetzt (siehe Tabelle oben). |
 
 ## build.sh
@@ -137,7 +146,7 @@ NODE_ENV=development npm start  # Portal auf http://localhost:3000
 npm test                      # Unit- und Ende-zu-Ende-Tests
 ```
 
-Im Mock-IServ gibt es u. a. `max.mustermann`, `erika.musterfrau`, `lena.ohnedaten` und den Admin `andre.bodendiek`.
+Im Mock-IServ gibt es u. a. `max.mustermann`, `erika.musterfrau`, `lena.ohnedaten`, die Lehrkraft `petra.pauker` (Rolle „Lehrer“) und den Admin `andre.bodendiek`.
 
 ## Datenschutz und Sicherheit
 
@@ -156,6 +165,8 @@ lib/importer.js      CSV/XLSX-Import mit Spaltenerkennung
 lib/phase.js         Phasenlogik (Europe/Berlin)
 lib/views.js         Start- und Schüleransicht
 lib/admin-views.js   Verwaltung und Import-Vorschau
+lib/teacher.js       Erkennung von Lehrkräften, Gruppen
+lib/teacher-views.js Kartendruck (A4-Bögen)
 public/              CSS (Aurora/Glas, Maxe-Grün + MINT-EC-Gelb), JS, Favicon
 public/img/          Schullogo und MINT-EC-Logo (jeweils Hell-/Dunkelvariante)
 tools/mock-iserv.js  lokaler Test-IServ
