@@ -44,11 +44,75 @@ Die Nutzer:innen brauchen in IServ das Recht **„OAuth verwenden“**. Das Port
 
 ## Deployment mit CapRover
 
-1. Neue App anlegen, HTTPS aktivieren, **Persistent Directory** `/app/data` einrichten.
-2. Umgebungsvariablen aus `.env.example` setzen (mindestens `BASE_URL`, `ISERV_URL`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `ADMIN_ACCOUNTS`, `SESSION_SECRET`, `DATA_KEY`). Geheimnisse erzeugen: `openssl rand -base64 48`.
-3. Container-HTTP-Port: **80**. Deploy per `caprover deploy` oder Tarball (`captain-definition` liegt bei).
+### 1. App einrichten
 
-**Wichtig:** `DATA_KEY` nie ändern – die Zugangsdaten sind damit verschlüsselt (AES-256-GCM) gespeichert.
+1. In CapRover eine neue App anlegen (z. B. `biber`).
+2. **HTTP Settings:** Domain verbinden (z. B. `biber.ihre-domain.de`), **HTTPS aktivieren** und **„Force HTTPS“** einschalten.
+3. **App Configs → Container HTTP Port:** `80`.
+4. **App Configs → Persistent Directories:** Path in App `/app/data` (Label z. B. `biber-data`). Ohne dieses Verzeichnis sind importierte Zugangsdaten nach jedem Deploy weg.
+
+### 2. Umgebungsvariablen anlegen
+
+Unter **App Configs → Environmental Variables** (am schnellsten über **„Bulk Edit“**) eintragen und mit **„Save & Update“** speichern:
+
+```dotenv
+NODE_ENV=production
+BASE_URL=https://biber.ihre-domain.de
+ISERV_URL=https://ihre-iserv-domain.de
+OIDC_CLIENT_ID=<aus IServ>
+OIDC_CLIENT_SECRET=<aus IServ>
+ADMIN_ACCOUNTS=vorname.nachname
+SESSION_SECRET=<zufällig, mind. 32 Zeichen>
+DATA_KEY=<zufällig, mind. 32 Zeichen – nie wieder ändern>
+```
+
+**Pflicht**
+
+| Variable | Wert / Bedeutung |
+|---|---|
+| `NODE_ENV` | `production` – aktiviert sichere Cookies und strenge Prüfungen. Ohne diesen Wert startet das Portal im Entwicklungsmodus (u. a. `localhost` als Rücksprung-Adresse). |
+| `BASE_URL` | Öffentliche Adresse des Portals mit `https://`, **ohne** Schrägstrich am Ende. Daraus entsteht die Weiterleitungs-URI für IServ: `BASE_URL/auth/callback`. |
+| `ISERV_URL` | Adresse des Schul-IServ (nur Domain, ohne `/iserv`). Muss dem `issuer` unter `https://<iserv>/.well-known/openid-configuration` entsprechen. |
+| `OIDC_CLIENT_ID` | Client-ID des Single-Sign-On-Clients in IServ. |
+| `OIDC_CLIENT_SECRET` | Client-Geheimnis des Single-Sign-On-Clients in IServ. |
+| `ADMIN_ACCOUNTS` | IServ-Accountnamen mit Zugriff auf die Verwaltung, kommagetrennt (z. B. `andre.bodendiek,kollegin.name`). |
+| `SESSION_SECRET` | Zufallswert (≥ 32 Zeichen) zum Signieren der Sitzungen. Ändern meldet alle ab. |
+| `DATA_KEY` | Zufallswert (≥ 32 Zeichen), mit dem die Zugangsdaten verschlüsselt gespeichert werden (AES-256-GCM). **Nach dem ersten Start nie ändern** – sonst sind die gespeicherten Daten nicht mehr lesbar. Zusätzlich sicher aufbewahren (z. B. Passwortmanager). |
+
+Geheimnisse erzeugen: `./build.sh secrets` (oder `openssl rand -base64 48`).
+
+**Optional**
+
+| Variable | Standard | Wofür |
+|---|---|---|
+| `SCHOOL_NAME` | `Johann-Beckmann-Gymnasium Hoya` | Schulname in der Fußzeile |
+| `IMPRESSUM_URL` | leer | Link „Impressum“ in der Fußzeile |
+| `DATENSCHUTZ_URL` | leer | Link „Datenschutz“ in der Fußzeile |
+| `TRUST_PROXY` | `1` (in Produktion) | Anzahl vertrauenswürdiger Proxys; hinter CapRover/nginx passt `1` |
+| `OIDC_SCOPE` | `openid profile email` | Angefragte Scopes |
+| `OIDC_ACCOUNT_CLAIM` | `preferred_username` | Claim, der den IServ-Accountnamen enthält |
+| `OIDC_TOKEN_AUTH_METHOD` | automatisch | `client_secret_basic` oder `client_secret_post` – nur setzen, wenn der Token-Abruf scheitert |
+| `OIDC_PKCE` | `true` | Auf `false`, falls IServ PKCE ablehnt |
+
+`PORT` (80) und `DATA_DIR` (`/app/data`) setzt bereits das Dockerfile – nicht anlegen.
+
+### 3. Deployen
+
+```bash
+./build.sh deploy            # App interaktiv auswählen
+./build.sh deploy biber      # direkt in die App „biber“
+```
+
+Alternativ `./build.sh` ausführen und `dist/biber-portal.tar` in CapRover unter **Deployment → „Upload tar file“** hochladen.
+
+### Häufige Fehler
+
+| Meldung | Ursache |
+|---|---|
+| IServ: „Redirect-URI ist ungültig“ | Weiterleitungs-URI in IServ ≠ `BASE_URL/auth/callback`, oder `BASE_URL`/`NODE_ENV` fehlen (dann wird `localhost` gesendet). |
+| Log: `Login-Start fehlgeschlagen … ConnectTimeoutError` | Der Server erreicht IServ nicht (Firewall/Länder- oder IP-Sperre in IServ, falsche `ISERV_URL`). Test auf dem Server: `curl https://<iserv>/.well-known/openid-configuration`. |
+| Start bricht ab: „Datenspeicher konnte nicht entschlüsselt werden“ | `DATA_KEY` wurde geändert. Alten Schlüssel wieder eintragen. |
+| Start bricht ab: „Umgebungsvariable … fehlt“ | Pflichtvariable nicht gesetzt (siehe Tabelle oben). |
 
 ## build.sh
 
