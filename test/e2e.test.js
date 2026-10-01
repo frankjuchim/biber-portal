@@ -98,6 +98,10 @@ test('kompletter Ablauf', async () => {
   assert.ok(!page.text.includes('biber-max'));
   assert.equal(page.res.headers.get('cache-control'), 'no-store');
   assert.match(page.res.headers.get('content-security-policy'), /script-src 'self'/);
+  // Direkt-Login: Formular an die Biber-Anmeldeseite, von der CSP erlaubt
+  assert.match(page.text, /<form class="go" method="post" action="https:\/\/wettbewerb\.informatik-biber\.de\/index\.php\?action=login" target="_blank"/);
+  assert.match(page.text, /name="username" value="biber-erika"/);
+  assert.match(page.res.headers.get('content-security-policy'), /form-action 'self' https:\/\/wettbewerb\.informatik-biber\.de/);
 
   // Kein Admin-Zugriff
   const forb = await erika.go('/admin');
@@ -147,7 +151,7 @@ test('einzelne Zugänge per Formular anlegen und bearbeiten', async () => {
   // Sichtbarkeit wieder einschalten (vorheriger Test hat sie ausgeschaltet)
   page = await admin.go('/admin/settings', {
     method: 'POST', headers: form,
-    body: new URLSearchParams({ _csrf: csrfOf(page.text), phaseMode: 'auto', schnupperStart: '2026-09-14', schnupperEnd: '2026-11-06', contestStart: '2026-11-09', contestEnd: '2026-11-20', loginUrl: 'https://wettbewerb.informatik-biber.de/index.php?action=login', schnupperUrl: 'https://wettbewerb.informatik-biber.de/index.php?action=login', notice: '', credentialsVisible: '1' }),
+    body: new URLSearchParams({ _csrf: csrfOf(page.text), phaseMode: 'auto', schnupperStart: '2026-09-14', schnupperEnd: '2026-11-06', contestStart: '2026-11-09', contestEnd: '2026-11-20', loginUrl: 'https://wettbewerb.informatik-biber.de/index.php?action=login', schnupperUrl: 'https://wettbewerb.informatik-biber.de/index.php?action=login', notice: '', credentialsVisible: '1', directLogin: '1' }),
   });
 
   // Anlegen mit „Anlegen & nächster“ → leeres Formular mit Erfolgsmeldung
@@ -196,3 +200,65 @@ test('einzelne Zugänge per Formular anlegen und bearbeiten', async () => {
   assert.match(page.text, /Neu-Pw-2/);
   assert.ok(!page.text.includes('Erst-Pw-1'));
 });
+
+test('Lehrkraft (IServ-Rolle) druckt Zugangskarten einer Gruppe', async () => {
+  const teacher = browser();
+  let page = await login(teacher, 'petra.pauker'); // Rolle „Lehrer“ über iserv:roles
+  assert.match(page.url, /\/karten$/);
+  assert.match(page.text, /Zugangskarten\./);
+  assert.match(page.text, /IServ-Rolle: Lehrer/);
+  assert.match(page.text, /name="g" value="8c"/);
+  assert.ok(!page.text.includes('Verwaltung</span>'));
+
+  page = await teacher.go('/karten/druck?g=8c&n=10&split=1');
+  assert.match(page.text, /class="sheet n10"/);
+  assert.match(page.text, /biber-lena/);
+  assert.match(page.text, /Neu-Pw-2/);
+  assert.ok(!page.text.includes('biber-erika')); // andere Gruppe nicht dabei
+  assert.equal(page.res.headers.get('cache-control'), 'no-store');
+
+  assert.ok(!page.text.includes('localhost:3100')); // keine Portal-Adresse auf der Karte
+
+  // Gruppenliste: lena zusätzlich im Kurs „Informatik 10“ → eigene Gruppe, Karte mit Kursname
+  const admin0 = browser();
+  page = await login(admin0, 'andre.bodendiek');
+  page = await admin0.go('/admin');
+  const fd = new FormData();
+  fd.set('_csrf', csrfOf(page.text));
+  // IServ-Gruppenliste: Zeile pro Gruppe; lena ist schon zugeordnet, „Neu Person“ hat keinen Zugang
+  fd.set('file', new Blob(['\ufeffGruppe;Nachname;Vorname;Account;Klasse/Information\n"Informatik 10";Ohnedaten;Lena;lena.ohnedaten;8c\n"AG Robotik";Ohnedaten;Lena;lena.ohnedaten;8c\n"AG Robotik";Person;Neu;neu.person;8c\n']), 'Export_Grouplist.csv');
+  page = await admin0.go('/admin/groups', { method: 'POST', body: fd });
+  assert.match(page.text, /2 Personen erkannt/);
+  page = await admin0.go('/admin/groups/confirm', {
+    method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrfOf(page.text), token: page.text.match(/name="token" value="([^"]+)"/)[1], mode: 'add', assign: '1' }),
+  });
+  assert.match(page.text, /Gruppen für 1 Zugänge/);
+  assert.ok(!page.text.includes('neu.person')); // Personen ohne Biber-Zugang werden nicht gespeichert
+  page = await teacher.go('/karten');
+  assert.match(page.text, /name="g" value="Informatik 10"/);
+  assert.match(page.text, /name="g" value="8c"/);
+  page = await teacher.go('/karten/druck?g=Informatik%2010');
+  assert.match(page.text, /<em>Informatik 10<\/em>/);
+  assert.match(page.text, /biber-lena/);
+  page = await teacher.go('/karten/druck?g=8c&g=Informatik%2010&g=AG%20Robotik');
+  assert.equal(page.text.match(/class="card"/g).length, 1);
+  assert.match(page.text, /in mehreren gewählten Gruppen/);
+
+  // Verwaltung bleibt gesperrt
+  assert.equal((await teacher.go('/admin')).res.status, 403);
+
+  // Schüler:innen haben keinen Zugriff
+  const max = browser();
+  await login(max, 'max.mustermann');
+  assert.equal((await max.go('/karten')).res.status, 403);
+  assert.equal((await max.go('/karten/druck?g=8c')).res.status, 403);
+
+  // Druck wird protokolliert
+  const admin = browser();
+  page = await login(admin, 'andre.bodendiek');
+  page = await admin.go('/admin');
+  assert.match(page.text, /Karten gedruckt: 8c \(1\)/);
+  assert.match(page.text, /Gruppen ergänzt: 1 Zugänge, 1 Accounts ohne Zugang/);
+});
+

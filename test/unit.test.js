@@ -101,3 +101,147 @@ test('Phasen nach Datum (Europe/Berlin)', () => {
   assert.equal(currentPhase({ ...st, phaseMode: 'wettbewerb' }, new Date('2026-09-30T10:00:00Z')), 'wettbewerb');
   assert.equal(daysUntil('2026-11-09', new Date('2026-09-30T10:00:00Z')), 40);
 });
+
+test('Lehrkräfte werden über IServ-Rollen, Gruppen oder Accountliste erkannt', async () => {
+  const { detectTeacher, claimLabels, groupsOf, credentialsForGroups } = await import('../lib/teacher.js');
+  const cfg = { admins: new Set(['admin.konto']), teacherAccounts: new Set(['extra.lehrer']), teacherRoles: ['lehrer', 'lehrkraft'] };
+  // IServ-Format (Scope iserv:roles / iserv:groups)
+  assert.ok(detectTeacher({ roles: [{ uuid: 'x', id: 'ROLE_1', displayName: 'Lehrer' }] }, 'a.b', cfg));
+  assert.ok(detectTeacher({ groups: [{ id: 'g', act: 'lehrkraft', name: 'Lehrkräfte' }] }, 'a.b', cfg));
+  assert.ok(detectTeacher({ roles: ['LEHRER'] }, 'a.b', cfg));
+  assert.ok(detectTeacher({}, 'admin.konto', cfg));
+  assert.ok(detectTeacher({}, 'extra.lehrer', cfg));
+  assert.ok(!detectTeacher({ roles: [{ displayName: 'Schüler' }], groups: [{ act: 'klasse.8b', name: 'Klasse 8b' }] }, 'max.m', cfg));
+  assert.ok(!detectTeacher({ name: 'Lehrer' }, 'max.m', cfg)); // nur Rollen-/Gruppen-Claims zählen
+  assert.deepEqual(claimLabels({ roles: [{ displayName: 'Lehrer', id: 'ROLE_T' }] }).sort(), ['Lehrer', 'ROLE_T']);
+
+  const creds = [
+    { username: 'u3', className: '10a', lastName: 'Zander' },
+    { username: 'u1', className: '9b', lastName: 'Arndt' },
+    { username: 'u2', className: '10a', lastName: 'Becker' },
+    { username: 'u4', className: '' },
+  ];
+  assert.deepEqual(groupsOf(creds).map((g) => [g.key, g.count]), [['9b', 1], ['10a', 2], ['–', 1]]);
+  assert.deepEqual(credentialsForGroups(creds, ['10a', '9b']).entries.map((e) => e.c.username), ['u1', 'u2', 'u3']);
+});
+
+test('Schüler:innen in mehreren Gruppen: zählen überall, gedruckt wird einmal', async () => {
+  const { groupsOf, credentialsForGroups, splitGroups, groupsOfCred } = await import('../lib/teacher.js');
+  assert.deepEqual(splitGroups('Informatik 10, AG Robotik; informatik 10 |  10a '), ['Informatik 10', 'AG Robotik', '10a']);
+  const creds = [
+    { id: 'a', username: 'ua', className: '10a', lastName: 'Arndt', groups: ['Informatik 10', 'AG Robotik'] },
+    { id: 'b', username: 'ub', className: '10b', lastName: 'Becker', groups: ['Informatik 10'] },
+    { id: 'c', username: 'uc', className: '10a', lastName: 'Cramer', groups: [] },
+  ];
+  assert.deepEqual(groupsOfCred(creds[0]), ['10a', 'Informatik 10', 'AG Robotik']);
+  assert.deepEqual(groupsOf(creds).map((g) => [g.key, g.count]), [['10a', 2], ['10b', 1], ['AG Robotik', 1], ['Informatik 10', 2]]);
+  // Kurs über Klassengrenzen hinweg
+  assert.deepEqual(credentialsForGroups(creds, ['Informatik 10']).entries.map((e) => [e.c.username, e.group]), [['ua', 'Informatik 10'], ['ub', 'Informatik 10']]);
+  // gemeinsame Auswahl: keine doppelten Karten
+  const { entries, skipped } = credentialsForGroups(creds, ['Informatik 10', '10a', 'AG Robotik']);
+  assert.deepEqual(entries.map((e) => [e.c.username, e.group]), [['ua', '10a'], ['uc', '10a'], ['ub', 'Informatik 10']]);
+  assert.equal(skipped, 2);
+});
+
+test('IServ-Gruppenliste: eine Zeile pro Mitgliedschaft, Personen zusammengefasst', async () => {
+  const { parseGroupFile } = await import('../lib/importer.js');
+  // Format wie der IServ-Export „Gruppenliste“ (UTF-8 mit BOM, Semikolon, Anführungszeichen)
+  const csv = '\ufeffGruppe;Nachname;Vorname;Account;Klasse/Information\n' +
+    '"Jahrgang 10";Muster;"Anna Lena";anna.lena.muster;10a\n' +
+    '"Jahrgang 10";Beispiel;Tom;tom.beispiel;10b\n' +
+    '"Kurs 10-Informatik";Muster;"Anna Lena";anna.lena.muster;10a\n' +
+    '"Kurs 10-Informatik";Beispiel;Tom;tom.beispiel;10b\n' +
+    '"AG Robotik";Muster;"Anna Lena";Anna.Lena.Muster;10a\n';
+  const { persons, rows, hasNames } = await parseGroupFile(Buffer.from(csv), 'Export_Grouplist.csv');
+  assert.equal(rows, 5);
+  assert.ok(hasNames);
+  assert.deepEqual(persons, [
+    { account: 'anna.lena.muster', firstName: 'Anna Lena', lastName: 'Muster', className: '10a', groups: ['Jahrgang 10', 'Kurs 10-Informatik', 'AG Robotik'] },
+    { account: 'tom.beispiel', firstName: 'Tom', lastName: 'Beispiel', className: '10b', groups: ['Jahrgang 10', 'Kurs 10-Informatik'] },
+  ]);
+});
+
+test('Zuordnung Biber → IServ über Klasse + Name: nur eindeutige Treffer', async () => {
+  const { matchCredentials, normClass, normName } = await import('../lib/matching.js');
+  assert.equal(normClass('Klasse 10C'), '10c');
+  assert.equal(normName('Zoé Bräunlich-Søren'), 'zoe braeunlich soren');
+  const persons = [
+    { account: 'anna.lena.muster', firstName: 'Anna Lena', lastName: 'Muster', className: '10a' },
+    { account: 'tom.beispiel', firstName: 'Tom', lastName: 'Beispiel', className: '10b' },
+    { account: 'mia.schulz', firstName: 'Mia', lastName: 'Schulz', className: '10c' },
+    { account: 'mia.schulz2', firstName: 'Mia', lastName: 'Schulz', className: '10c' }, // gleicher Name, gleiche Klasse
+    { account: 'ben.mueller', firstName: 'Ben', lastName: 'Müller', className: '10d' },
+    { account: 'ben.mueller2', firstName: 'Ben', lastName: 'Müller', className: '10e' }, // gleicher Name, andere Klasse
+    { account: 'schon.da', firstName: 'Schon', lastName: 'Da', className: '10a' },
+  ];
+  const creds = [
+    { id: '1', username: 'b1', firstName: 'Anna', lastName: 'Muster', className: 'Klasse 10A' }, // nur 1. Vorname
+    { id: '2', username: 'b2', firstName: 'Tom', lastName: 'Beispiel', className: '10b' },
+    { id: '3', username: 'b3', firstName: 'Mia', lastName: 'Schulz', className: '10c' },
+    { id: '4', username: 'b4', firstName: 'Ben', lastName: 'Mueller', className: '10e' },
+    { id: '5', username: 'b5', firstName: 'Ben', lastName: 'Müller', className: 'Info-AG' }, // Klasse unbekannt, Name doppelt
+    { id: '6', username: 'b6', firstName: 'Gibt', lastName: 'Esnicht', className: '10a' },
+    { id: '7', username: 'b7', firstName: 'Schon', lastName: 'Da', className: '10a', account: 'schon.da' },
+  ];
+  const m = matchCredentials(creds, persons);
+  const got = Object.fromEntries(m.proposals.map((p) => [p.cred.username, [p.person.account, p.level.id]]));
+  assert.deepEqual(got, {
+    b2: ['tom.beispiel', 'klasse'],
+    b4: ['ben.mueller2', 'klasse'],
+    b1: ['anna.lena.muster', 'vorname'],
+  });
+  assert.deepEqual(m.ambiguous.map((a) => [a.cred.username, a.candidates.map((c) => c.account)]), [
+    ['b3', ['mia.schulz', 'mia.schulz2']],
+    ['b5', ['ben.mueller', 'ben.mueller2']], // nicht „der übrig gebliebene“ Ben Müller
+  ]);
+  assert.deepEqual(m.unmatched.map((c) => c.username), ['b6']); // b6 ist in 10a – Klasse kommt in der Liste vor
+  const m2 = matchCredentials([...creds, { id: '8', username: 'b8', firstName: 'X', lastName: 'Y', className: '5a' }], persons);
+  assert.equal(m2.outOfScope, 1); // 5a kommt in der Liste nicht vor → nicht als „nicht gefunden“ melden
+  assert.equal(m.alreadyAssigned, 1);
+
+  // Gruppen und Zuordnungen landen im Speicher
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'biber-groups-'));
+  const store = new Store(dir, 'k'.repeat(40));
+  store.importRows([
+    { username: 'b1', password: 'p', account: '', firstName: 'Anna', lastName: 'Muster', className: '10a' },
+    { username: 'b2', password: 'p', account: 'tom.beispiel', className: '10b', groups: ['Alt'] },
+  ], 'replace', 't');
+  const id1 = store.all()[0].id;
+  assert.equal(store.assignMany([{ credId: id1, account: 'anna.lena.muster' }, { credId: id1, account: 'x' }], 't'), 1);
+  assert.deepEqual(store.importGroups([{ account: 'anna.lena.muster', groups: ['Kurs Info'] }, { account: 'tom.beispiel', groups: ['Kurs Info'] }, { account: 'fremd', groups: ['Z'] }], 'add', 't'), { matched: 2, unknown: 1 });
+  assert.deepEqual(store.byAccount('tom.beispiel').groups, ['Alt', 'Kurs Info']);
+  store.importGroups([{ account: 'anna.lena.muster', groups: ['Neu'] }], 'replace', 't');
+  assert.deepEqual(store.byAccount('tom.beispiel').groups, []);
+  // erneuter Biber-Import ohne Gruppenspalte behält Gruppen
+  store.importRows([{ username: 'b1', password: 'p2', account: 'anna.lena.muster', className: '10a' }], 'merge', 't');
+  assert.deepEqual(store.byAccount('anna.lena.muster').groups, ['Neu']);
+});
+
+test('Mehrere Jahre: neuer Biber-Import behält IServ-Zuordnung und Gruppen', async () => {
+  const { contestYear } = await import('../lib/phase.js');
+  assert.equal(contestYear({ contestStart: '2027-11-08' }), '2027');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'biber-years-'));
+  const store = new Store(dir, 'k'.repeat(40));
+  // Jahr 1: Import ohne IServ-Spalte, dann Zuordnung + Gruppen
+  store.importRows([
+    { username: 'aanna', password: 'p1', firstName: 'Anna', lastName: 'A', className: '9a' },
+    { username: 'bben', password: 'p2', firstName: 'Ben', lastName: 'B', className: '13' },
+  ], 'replace', 't');
+  const anna = store.all().find((c) => c.username === 'aanna');
+  store.assignMany([{ credId: anna.id, account: 'anna.a' }], 't');
+  store.importGroups([{ account: 'anna.a', groups: ['Kurs Info 9'] }], 'add', 't');
+  store.markViewed(anna.id);
+  // Jahr 2: neuer Export (Biber-Konten bleiben, Klasse steigt, Abiturient fehlt, Neuer kommt dazu)
+  assert.deepEqual(store.importRows([
+    { username: 'aanna', password: 'p1', firstName: 'Anna', lastName: 'A', className: '10a' },
+    { username: 'cneu', password: 'p3', firstName: 'Neu', lastName: 'C', className: '5a' },
+  ], 'replace', 't'), { added: 1, updated: 1 });
+  const a2 = store.byAccount('anna.a');
+  assert.equal(a2.username, 'aanna');
+  assert.equal(a2.className, '10a');
+  assert.deepEqual(a2.groups, ['Kurs Info 9']);
+  assert.equal(a2.viewCount, 1);
+  assert.deepEqual(store.all().map((c) => c.username).sort(), ['aanna', 'cneu']);
+  store.resetViews('t');
+  assert.equal(store.byAccount('anna.a').viewCount, 0);
+});

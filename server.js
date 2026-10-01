@@ -11,12 +11,36 @@ import { fileURLToPath } from 'node:url';
 import { loadConfig, normalizeAccount } from './lib/config.js';
 import { Store } from './lib/store.js';
 import { createOidcClient } from './lib/oidc.js';
-import { parseCredentialFile } from './lib/importer.js';
-import { currentPhase, PHASES } from './lib/phase.js';
+import { parseCredentialFile, parseGroupFile } from './lib/importer.js';
+import { matchCredentials } from './lib/matching.js';
+import { currentPhase, PHASES, contestYear } from './lib/phase.js';
+import { detectTeacher, roleNames, groupsOf, credentialsForGroups } from './lib/teacher.js';
+import { teacherPage, cardsSheet, LAYOUTS } from './lib/teacher-views.js';
 import { layout, landingPage, studentPage, messagePage } from './lib/views.js';
-import { adminPage, importPreviewPage, credentialFormPage } from './lib/admin-views.js';
+import { adminPage, importPreviewPage, credentialFormPage, groupPreviewPage } from './lib/admin-views.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/** Vergleich Import ↔ Bestand über den Biber-Benutzernamen (für die Vorschau). */
+function importDiff(existing, rows) {
+  const incoming = new Set(rows.map((r) => r.username.toLowerCase()));
+  const known = new Map(existing.map((c) => [c.username.toLowerCase(), c]));
+  const same = [...incoming].filter((u) => known.has(u));
+  return {
+    added: incoming.size - same.length,
+    same: same.length,
+    keptAccounts: same.filter((u) => known.get(u).account).length,
+    gone: existing.filter((c) => !incoming.has(c.username.toLowerCase())).length,
+  };
+}
+
+function loginOrigin(url) {
+  try {
+    const u = new URL(url);
+    if (u.protocol === 'https:') return u.origin;
+  } catch { /* ungültige Adresse */ }
+  return "'self'";
+}
 
 export function createApp(cfg = loadConfig()) {
   const store = new Store(cfg.dataDir, cfg.dataKey);
@@ -36,7 +60,8 @@ export function createApp(cfg = loadConfig()) {
           'script-src': ["'self'"],
           'style-src': ["'self'"],
           'img-src': ["'self'", 'data:'],
-          'form-action': ["'self'"],
+          // Direkt-Login: Formular darf an die Biber-Anmeldeseite senden
+          'form-action': ["'self'", () => loginOrigin(store.settings.loginUrl)],
           'frame-ancestors': ["'none'"],
           'upgrade-insecure-requests': cfg.isProd ? [] : null,
         },
@@ -93,6 +118,14 @@ export function createApp(cfg = loadConfig()) {
     }
     next();
   };
+  const requireTeacher = (req, res, next) => {
+    const u = req.session.user;
+    if (!u) return res.redirect('/');
+    if (!(u.isTeacher || cfg.admins.has(u.account))) {
+      return render(req, res, { title: 'Kein Zugriff', body: messagePage({ title: 'Kein Zugriff.', text: 'Nur für Lehrkräfte.', action: { href: '/', label: 'Zurück' } }) }, 403);
+    }
+    next();
+  };
   const actor = (req) => req.session.user?.account || 'unbekannt';
   const setFlash = (req, type, text) => { req.session.flash = { type, text }; };
   const takeFlash = (req) => { const f = req.session.flash; req.session.flash = null; return f; };
@@ -106,6 +139,8 @@ export function createApp(cfg = loadConfig()) {
       name,
       givenName: claims.given_name || '',
       isAdmin: cfg.admins.has(account),
+      isTeacher: detectTeacher(claims, account, cfg),
+      roles: roleNames(claims),
     };
   }
 
@@ -116,12 +151,12 @@ export function createApp(cfg = loadConfig()) {
     const user = req.session.user;
     if (!user) {
       const error = req.session.loginError; req.session.loginError = null;
-      return render(req, res, { title: 'Anmelden', page: 'landing', body: landingPage({ cfg, error, devLogin: cfg.devLogin, csrf: req.session.csrf }) });
+      return render(req, res, { title: 'Anmelden', page: 'landing', body: landingPage({ cfg, error, devLogin: cfg.devLogin, csrf: req.session.csrf, year: contestYear(store.settings) }) });
     }
     const cred = store.byAccount(user.account);
     const settings = store.settings;
     if (cred && settings.credentialsVisible) store.markViewed(cred.id);
-    render(req, res, { title: 'Meine Zugangsdaten', page: 'student', body: studentPage({ user, cred, settings, phase: currentPhase(settings) }) });
+    render(req, res, { title: 'Meine Zugangsdaten', page: 'student', body: studentPage({ cfg, user, cred, settings, phase: currentPhase(settings) }) });
   });
 
   // ---------- IServ-Anmeldung ----------
@@ -149,7 +184,9 @@ export function createApp(cfg = loadConfig()) {
       const claims = await oidc.finishLogin({ code: String(req.query.code || ''), verifier: pending.verifier, nonce: pending.nonce });
       establishSession(req, claims);
       req.session.csrf = crypto.randomBytes(24).toString('base64url'); // neue Sitzung, neues Token
-      res.redirect(req.session.user.isAdmin && !store.byAccount(req.session.user.account) ? '/admin' : '/');
+      const u = req.session.user;
+      const own = store.byAccount(u.account);
+      res.redirect(u.isAdmin && !own ? '/admin' : u.isTeacher && !own ? '/karten' : '/');
     } catch (err) {
       console.error('[auth] Callback fehlgeschlagen:', err.message);
       req.session.loginError = 'Anmeldung hat nicht geklappt. Bitte noch einmal.';
@@ -188,7 +225,7 @@ export function createApp(cfg = loadConfig()) {
       // alte, verwaiste Vorschauen aufräumen
       for (const [k, v] of pendingImports) if (Date.now() - v.at > 30 * 60 * 1000) pendingImports.delete(k);
       pendingImports.set(token, { result, filename: req.file.originalname, actor: actor(req), at: Date.now() });
-      render(req, res, { title: 'Import-Vorschau', page: 'import', body: importPreviewPage({ result, token, csrf: req.session.csrf, filename: req.file.originalname, existingCount: store.all().length }) });
+      render(req, res, { title: 'Import-Vorschau', page: 'import', body: importPreviewPage({ result, token, csrf: req.session.csrf, filename: req.file.originalname, existingCount: store.all().length, diff: importDiff(store.all(), result.rows) }) });
     } catch (err) {
       setFlash(req, 'error', `Import nicht möglich: ${err.message}`);
       res.redirect('/admin#import');
@@ -198,7 +235,7 @@ export function createApp(cfg = loadConfig()) {
   app.post('/admin/import/confirm', requireAdmin, checkCsrf, (req, res) => {
     const pending = pendingImports.get(req.body.token);
     pendingImports.delete(req.body.token);
-    if (!pending || pending.actor !== actor(req)) {
+    if (!pending || pending.kind === 'groups' || pending.actor !== actor(req)) {
       setFlash(req, 'error', 'Die Vorschau ist abgelaufen. Bitte die Datei erneut hochladen.');
       return res.redirect('/admin#import');
     }
@@ -209,8 +246,52 @@ export function createApp(cfg = loadConfig()) {
     res.redirect('/admin#zuordnung');
   });
 
+  // ---------- Weitere Gruppen (Gruppenliste) ----------
+  app.get('/admin/gruppen-vorlage.csv', requireAdmin, (req, res) => {
+    const csv = '\ufeffGruppe;Nachname;Vorname;Account;Klasse/Information\n"Kurs Informatik 10";Mustermann;Max;max.mustermann;10a\n"AG Robotik";Mustermann;Max;max.mustermann;10a\n"Kurs Informatik 10";Musterfrau;Erika;erika.musterfrau;10b\n';
+    res.type('text/csv; charset=utf-8').attachment('biber-gruppen-vorlage.csv').send(csv);
+  });
+
+  // Schritt 1: Liste lesen, Zuordnung über Klasse + Name vorschlagen, Vorschau zeigen
+  app.post('/admin/groups', requireAdmin, upload.single('file'), checkCsrf, async (req, res) => {
+    try {
+      if (!req.file) throw new Error('Bitte eine Datei auswählen.');
+      const result = await parseGroupFile(req.file.buffer, req.file.originalname);
+      const match = result.hasNames ? matchCredentials(store.all(), result.persons) : null;
+      const token = crypto.randomBytes(18).toString('base64url');
+      for (const [k, v] of pendingImports) if (Date.now() - v.at > 30 * 60 * 1000) pendingImports.delete(k);
+      pendingImports.set(token, {
+        kind: 'groups',
+        persons: result.persons.map(({ account, groups }) => ({ account, groups })),
+        assignments: (match?.proposals || []).map((p) => ({ credId: p.cred.id, account: p.person.account })),
+        actor: actor(req),
+        at: Date.now(),
+      });
+      const knownAccounts = store.all().map((c) => c.account).filter(Boolean);
+      render(req, res, { title: 'Gruppenliste', page: 'import', body: groupPreviewPage({ result, match, token, csrf: req.session.csrf, filename: req.file.originalname, knownAccounts }) });
+    } catch (err) {
+      setFlash(req, 'error', `Gruppenliste nicht lesbar: ${err.message}`);
+      res.redirect('/admin#import');
+    }
+  });
+
+  // Schritt 2: Zuordnungen und Gruppen übernehmen
+  app.post('/admin/groups/confirm', requireAdmin, checkCsrf, (req, res) => {
+    const pending = pendingImports.get(req.body.token);
+    pendingImports.delete(req.body.token);
+    if (!pending || pending.kind !== 'groups' || pending.actor !== actor(req)) {
+      setFlash(req, 'error', 'Die Vorschau ist abgelaufen. Bitte die Liste erneut hochladen.');
+      return res.redirect('/admin#import');
+    }
+    const assigned = req.body.assign === '1' && pending.assignments.length ? store.assignMany(pending.assignments, actor(req)) : 0;
+    const { matched } = store.importGroups(pending.persons, req.body.mode === 'replace' ? 'replace' : 'add', actor(req));
+    const open = store.stats().unassigned;
+    setFlash(req, 'success', `Übernommen: ${assigned} IServ-Accounts zugeordnet, Gruppen für ${matched} Zugänge.${open ? ` ${open} Zugänge noch ohne IServ-Account.` : ''}`);
+    res.redirect('/admin#zuordnung');
+  });
+
   // ---------- Einzelne Zugänge (Formular) ----------
-  const FORM_FIELDS = ['firstName', 'lastName', 'className', 'level', 'username', 'password', 'account'];
+  const FORM_FIELDS = ['firstName', 'lastName', 'className', 'level', 'groups', 'username', 'password', 'account'];
   const pickForm = (body) => Object.fromEntries(FORM_FIELDS.map((k) => [k, String(body?.[k] ?? '')]));
   const renderForm = (req, res, opts, status = 200) =>
     render(req, res, { title: opts.mode === 'edit' ? 'Zugang bearbeiten' : 'Neuer Zugang', page: 'admin', body: credentialFormPage({ csrf: req.session.csrf, flash: takeFlash(req), ...opts }) }, status);
@@ -265,6 +346,12 @@ export function createApp(cfg = loadConfig()) {
     res.redirect('/admin#zuordnung');
   });
 
+  app.post('/admin/reset-views', requireAdmin, checkCsrf, (req, res) => {
+    store.resetViews(actor(req));
+    setFlash(req, 'success', 'Abrufstatistik zurückgesetzt.');
+    res.redirect('/admin#protokoll');
+  });
+
   app.post('/admin/clear', requireAdmin, checkCsrf, (req, res) => {
     if (req.body.confirm !== 'LÖSCHEN') {
       setFlash(req, 'error', 'Bitte zur Bestätigung LÖSCHEN eingeben.');
@@ -302,9 +389,26 @@ export function createApp(cfg = loadConfig()) {
       schnupperUrl: b.schnupperUrl,
       notice: String(b.notice || '').slice(0, 300).trim(),
       credentialsVisible: b.credentialsVisible === '1',
+      directLogin: b.directLogin === '1',
     }, actor(req));
     setFlash(req, 'success', 'Einstellungen gespeichert.');
     res.redirect('/admin#einstellungen');
+  });
+
+  // ---------- Lehrkräfte: Zugangskarten ----------
+  app.get('/karten', requireTeacher, (req, res) => {
+    const creds = store.all();
+    render(req, res, { title: 'Zugangskarten', page: 'teacher', body: teacherPage({ user: req.session.user, groups: groupsOf(creds), total: creds.length, roles: req.session.user.roles }) });
+  });
+
+  app.get('/karten/druck', requireTeacher, (req, res) => {
+    const keys = [].concat(req.query.g || []).map(String).slice(0, 200);
+    const perPage = LAYOUTS[req.query.n] ? Number(req.query.n) : 8;
+    const groups = groupsOf(store.all()).filter((g) => keys.includes(g.key));
+    if (!groups.length) return res.redirect('/karten');
+    const { entries, skipped } = credentialsForGroups(store.all(), groups.map((g) => g.key));
+    store.note(actor(req), 'print', `Karten gedruckt: ${groups.map((g) => g.label).join(', ')} (${entries.length})`);
+    render(req, res, { title: 'Karten drucken', page: 'cards', body: cardsSheet({ cfg, entries, skipped, perPage, split: req.query.split !== '0', groupLabels: groups.map((g) => g.label), year: contestYear(store.settings) }) });
   });
 
   app.get('/admin/preview/:id', requireAdmin, (req, res) => {
@@ -312,7 +416,7 @@ export function createApp(cfg = loadConfig()) {
     if (!cred) return res.redirect('/admin#zuordnung');
     const fakeUser = { account: cred.account || '(ohne Zuordnung)', name: [cred.firstName, cred.lastName].filter(Boolean).join(' '), givenName: cred.firstName };
     const settings = store.settings;
-    render(req, res, { title: 'Vorschau', page: 'student', body: studentPage({ user: fakeUser, cred, settings, phase: currentPhase(settings), preview: true }) });
+    render(req, res, { title: 'Vorschau', page: 'student', body: studentPage({ cfg, user: fakeUser, cred, settings, phase: currentPhase(settings), preview: true }) });
   });
 
   // ---------- Fehler ----------
