@@ -12,7 +12,9 @@ Schülerinnen und Schüler melden sich mit ihrem **IServ-Konto (Single-Sign-On, 
 
 **Zugangskarten für Lehrkräfte** (Menüpunkt „Karten“)
 - Lehrkräfte werden über IServ erkannt: Rolle bzw. Gruppe „Lehrer“ (Scope `iserv:roles`, siehe `TEACHER_ROLES`). Zusätzlich gelten alle `ADMIN_ACCOUNTS` und `TEACHER_ACCOUNTS`.
-- Eine oder mehrere Gruppen (Klasse/Kurs aus dem Biber-Export) wählen → druckfertiger DIN-A4-Bogen mit 8, 10 oder 12 Karten pro Blatt, Schnittlinien, Schullogo, Name, Klasse, Benutzername, Passwort und Anmeldeadresse; auf Wunsch beginnt jede Gruppe auf einem neuen Blatt.
+- Eine oder mehrere Gruppen wählen → druckfertiger DIN-A4-Bogen mit 8, 10 oder 12 Karten pro Blatt, Schnittlinien, Schullogo, Name, Gruppe, Benutzername, Passwort und Anmeldeadresse; auf Wunsch beginnt jede Gruppe auf einem neuen Blatt.
+- **Mehrere Gruppen je Schüler:in:** Neben der Klasse/dem Kurs aus dem Biber-Export kann jeder Zugang beliebig viele weitere Gruppen haben (z. B. „Informatik 10“, „AG Robotik“). Er erscheint in jeder dieser Gruppen. Werden mehrere Gruppen zusammen gedruckt, gibt es pro Person trotzdem nur eine Karte (in der ersten gewählten Gruppe).
+- Weitere Gruppen kommen aus: Verwaltung → Import → **„Gruppen zuordnen“** (Liste mit Spalten `IServ` und `Gruppen`; mehrere Gruppen je Zelle mit Komma oder eine Zeile pro Gruppe; „Ergänzen“ oder „Ersetzen“), einer Spalte `Gruppen` direkt im Biber-Import, oder einzeln über das Stift-Symbol.
 - Drucken mit Skalierung 100 % und ohne Kopf-/Fußzeilen. Jeder Druck wird im Protokoll der Verwaltung vermerkt. Lehrkräfte sehen die Verwaltung nicht.
 
 **Verwaltung** (nur Accounts aus `ADMIN_ACCOUNTS`)

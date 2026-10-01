@@ -122,5 +122,48 @@ test('Lehrkräfte werden über IServ-Rollen, Gruppen oder Accountliste erkannt',
     { username: 'u4', className: '' },
   ];
   assert.deepEqual(groupsOf(creds).map((g) => [g.key, g.count]), [['9b', 1], ['10a', 2], ['–', 1]]);
-  assert.deepEqual(credentialsForGroups(creds, ['10a', '9b']).map((c) => c.username), ['u1', 'u2', 'u3']);
+  assert.deepEqual(credentialsForGroups(creds, ['10a', '9b']).entries.map((e) => e.c.username), ['u1', 'u2', 'u3']);
+});
+
+test('Schüler:innen in mehreren Gruppen: zählen überall, gedruckt wird einmal', async () => {
+  const { groupsOf, credentialsForGroups, splitGroups, groupsOfCred } = await import('../lib/teacher.js');
+  assert.deepEqual(splitGroups('Informatik 10, AG Robotik; informatik 10 |  10a '), ['Informatik 10', 'AG Robotik', '10a']);
+  const creds = [
+    { id: 'a', username: 'ua', className: '10a', lastName: 'Arndt', groups: ['Informatik 10', 'AG Robotik'] },
+    { id: 'b', username: 'ub', className: '10b', lastName: 'Becker', groups: ['Informatik 10'] },
+    { id: 'c', username: 'uc', className: '10a', lastName: 'Cramer', groups: [] },
+  ];
+  assert.deepEqual(groupsOfCred(creds[0]), ['10a', 'Informatik 10', 'AG Robotik']);
+  assert.deepEqual(groupsOf(creds).map((g) => [g.key, g.count]), [['10a', 2], ['10b', 1], ['AG Robotik', 1], ['Informatik 10', 2]]);
+  // Kurs über Klassengrenzen hinweg
+  assert.deepEqual(credentialsForGroups(creds, ['Informatik 10']).entries.map((e) => [e.c.username, e.group]), [['ua', 'Informatik 10'], ['ub', 'Informatik 10']]);
+  // gemeinsame Auswahl: keine doppelten Karten
+  const { entries, skipped } = credentialsForGroups(creds, ['Informatik 10', '10a', 'AG Robotik']);
+  assert.deepEqual(entries.map((e) => [e.c.username, e.group]), [['ua', '10a'], ['uc', '10a'], ['ub', 'Informatik 10']]);
+  assert.equal(skipped, 2);
+});
+
+test('Gruppenliste: mehrere Zeilen je Account und mehrere Gruppen je Zelle', async () => {
+  const { parseGroupFile } = await import('../lib/importer.js');
+  const csv = 'IServ;Gruppen\nmax.mustermann;Informatik 10, AG Robotik\nMax.Mustermann@schule.de;Informatik 10\nerika.musterfrau;Chor\n';
+  const { memberships } = await parseGroupFile(Buffer.from(csv), 'g.csv');
+  assert.deepEqual(memberships, [
+    { account: 'max.mustermann', groups: ['Informatik 10', 'AG Robotik'] },
+    { account: 'erika.musterfrau', groups: ['Chor'] },
+  ]);
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'biber-groups-'));
+  const store = new Store(dir, 'k'.repeat(40));
+  store.importRows([
+    { username: 'b1', password: 'p', account: 'max.mustermann', className: '10a' },
+    { username: 'b2', password: 'p', account: 'erika.musterfrau', className: '10b', groups: ['Alt'] },
+  ], 'replace', 't');
+  assert.deepEqual(store.importGroups(memberships, 'add', 't'), { matched: 2, unknown: 0 });
+  assert.deepEqual(store.byAccount('erika.musterfrau').groups, ['Alt', 'Chor']);
+  store.importGroups([{ account: 'max.mustermann', groups: ['Neu'] }, { account: 'x.y', groups: ['Z'] }], 'replace', 't');
+  assert.deepEqual(store.byAccount('max.mustermann').groups, ['Neu']);
+  assert.deepEqual(store.byAccount('erika.musterfrau').groups, []);
+  // erneuter Biber-Import ohne Gruppenspalte behält die Gruppen
+  store.importRows([{ username: 'b1', password: 'p2', account: 'max.mustermann', className: '10a' }], 'merge', 't');
+  assert.deepEqual(store.byAccount('max.mustermann').groups, ['Neu']);
 });

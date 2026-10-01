@@ -217,6 +217,28 @@ test('Lehrkraft (IServ-Rolle) druckt Zugangskarten einer Gruppe', async () => {
   assert.ok(!page.text.includes('biber-erika')); // andere Gruppe nicht dabei
   assert.equal(page.res.headers.get('cache-control'), 'no-store');
 
+  assert.ok(!page.text.includes('localhost:3100')); // keine Portal-Adresse auf der Karte
+
+  // Gruppenliste: lena zusätzlich im Kurs „Informatik 10“ → eigene Gruppe, Karte mit Kursname
+  const admin0 = browser();
+  page = await login(admin0, 'andre.bodendiek');
+  page = await admin0.go('/admin');
+  const fd = new FormData();
+  fd.set('_csrf', csrfOf(page.text));
+  fd.set('mode', 'add');
+  fd.set('file', new Blob(['IServ;Gruppen\nlena.ohnedaten;Informatik 10, AG Robotik\n']), 'gruppen.csv');
+  page = await admin0.go('/admin/groups', { method: 'POST', body: fd });
+  assert.match(page.text, /Gruppen übernommen: 1 Zugänge aktualisiert/);
+  page = await teacher.go('/karten');
+  assert.match(page.text, /name="g" value="Informatik 10"/);
+  assert.match(page.text, /name="g" value="8c"/);
+  page = await teacher.go('/karten/druck?g=Informatik%2010');
+  assert.match(page.text, /<em>Informatik 10<\/em>/);
+  assert.match(page.text, /biber-lena/);
+  page = await teacher.go('/karten/druck?g=8c&g=Informatik%2010&g=AG%20Robotik');
+  assert.equal(page.text.match(/class="card"/g).length, 1);
+  assert.match(page.text, /in mehreren gewählten Gruppen/);
+
   // Verwaltung bleibt gesperrt
   assert.equal((await teacher.go('/admin')).res.status, 403);
 
@@ -231,5 +253,6 @@ test('Lehrkraft (IServ-Rolle) druckt Zugangskarten einer Gruppe', async () => {
   page = await login(admin, 'andre.bodendiek');
   page = await admin.go('/admin');
   assert.match(page.text, /Karten gedruckt: 8c \(1\)/);
+  assert.match(page.text, /Gruppen ergänzt: 1 Zugänge/);
 });
 

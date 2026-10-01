@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { loadConfig, normalizeAccount } from './lib/config.js';
 import { Store } from './lib/store.js';
 import { createOidcClient } from './lib/oidc.js';
-import { parseCredentialFile } from './lib/importer.js';
+import { parseCredentialFile, parseGroupFile } from './lib/importer.js';
 import { currentPhase, PHASES } from './lib/phase.js';
 import { detectTeacher, roleNames, groupsOf, credentialsForGroups } from './lib/teacher.js';
 import { teacherPage, cardsSheet, LAYOUTS } from './lib/teacher-views.js';
@@ -232,8 +232,27 @@ export function createApp(cfg = loadConfig()) {
     res.redirect('/admin#zuordnung');
   });
 
+  // ---------- Weitere Gruppen (Gruppenliste) ----------
+  app.get('/admin/gruppen-vorlage.csv', requireAdmin, (req, res) => {
+    const csv = '\ufeffIServ;Gruppen\nmax.mustermann;Informatik 10, AG Robotik\nerika.musterfrau;Informatik 10\n';
+    res.type('text/csv; charset=utf-8').attachment('biber-gruppen-vorlage.csv').send(csv);
+  });
+
+  app.post('/admin/groups', requireAdmin, upload.single('file'), checkCsrf, async (req, res) => {
+    try {
+      if (!req.file) throw new Error('Bitte eine Datei auswählen.');
+      const { memberships } = await parseGroupFile(req.file.buffer, req.file.originalname);
+      const mode = req.body.mode === 'replace' ? 'replace' : 'add';
+      const { matched, unknown } = store.importGroups(memberships, mode, actor(req));
+      setFlash(req, 'success', `Gruppen übernommen: ${matched} Zugänge aktualisiert.${unknown ? ` ${unknown} Accounts aus der Liste haben (noch) keinen Biber-Zugang.` : ''}`);
+    } catch (err) {
+      setFlash(req, 'error', `Gruppen nicht übernommen: ${err.message}`);
+    }
+    res.redirect('/admin#import');
+  });
+
   // ---------- Einzelne Zugänge (Formular) ----------
-  const FORM_FIELDS = ['firstName', 'lastName', 'className', 'level', 'username', 'password', 'account'];
+  const FORM_FIELDS = ['firstName', 'lastName', 'className', 'level', 'groups', 'username', 'password', 'account'];
   const pickForm = (body) => Object.fromEntries(FORM_FIELDS.map((k) => [k, String(body?.[k] ?? '')]));
   const renderForm = (req, res, opts, status = 200) =>
     render(req, res, { title: opts.mode === 'edit' ? 'Zugang bearbeiten' : 'Neuer Zugang', page: 'admin', body: credentialFormPage({ csrf: req.session.csrf, flash: takeFlash(req), ...opts }) }, status);
@@ -342,9 +361,9 @@ export function createApp(cfg = loadConfig()) {
     const perPage = LAYOUTS[req.query.n] ? Number(req.query.n) : 8;
     const groups = groupsOf(store.all()).filter((g) => keys.includes(g.key));
     if (!groups.length) return res.redirect('/karten');
-    const creds = credentialsForGroups(store.all(), groups.map((g) => g.key));
-    store.note(actor(req), 'print', `Karten gedruckt: ${groups.map((g) => g.label).join(', ')} (${creds.length})`);
-    render(req, res, { title: 'Karten drucken', page: 'cards', body: cardsSheet({ cfg, creds, perPage, split: req.query.split !== '0', groupLabels: groups.map((g) => g.label) }) });
+    const { entries, skipped } = credentialsForGroups(store.all(), groups.map((g) => g.key));
+    store.note(actor(req), 'print', `Karten gedruckt: ${groups.map((g) => g.label).join(', ')} (${entries.length})`);
+    render(req, res, { title: 'Karten drucken', page: 'cards', body: cardsSheet({ cfg, entries, skipped, perPage, split: req.query.split !== '0', groupLabels: groups.map((g) => g.label) }) });
   });
 
   app.get('/admin/preview/:id', requireAdmin, (req, res) => {
