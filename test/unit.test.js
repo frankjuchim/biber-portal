@@ -245,3 +245,13 @@ test('Mehrere Jahre: neuer Biber-Import behält IServ-Zuordnung und Gruppen', as
   store.resetViews('t');
   assert.equal(store.byAccount('anna.a').viewCount, 0);
 });
+
+test('Login-Fehler werden verständlich erklärt', async () => {
+  const { loginHint } = await import('../server.js');
+  assert.match(loginHint('IServ meldet: invalid_scope'), /iserv:roles/);
+  assert.match(loginHint('IServ meldet: access_denied'), /OAuth verwenden/);
+  assert.match(loginHint('Ungültiger oder abgelaufener Anmeldevorgang (state).'), /Cookie/);
+  assert.match(loginHint('Token-Abruf fehlgeschlagen (401): invalid_client'), /Client-ID/);
+  assert.match(loginHint('unexpected "iss" claim value'), /ISERV_URL/);
+  assert.match(loginHint('irgendwas'), /App-Log/);
+});

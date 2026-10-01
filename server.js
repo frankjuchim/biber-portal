@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import cookieSession from 'cookie-session';
 import multer from 'multer';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -20,6 +21,22 @@ import { layout, landingPage, studentPage, messagePage } from './lib/views.js';
 import { adminPage, importPreviewPage, credentialFormPage, groupPreviewPage } from './lib/admin-views.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/** Verständlicher Hinweis zur Ursache eines fehlgeschlagenen IServ-Logins (ohne Geheimnisse). */
+export function loginHint(msg = '') {
+  const m = String(msg);
+  if (/invalid_scope/i.test(m)) return 'Ursache: IServ gibt einen angefragten Scope nicht frei – im IServ-Client „iserv:roles“ erlauben (oder OIDC_SCOPE anpassen).';
+  if (/access_denied/i.test(m)) return 'Ursache: Zugriff verweigert – fehlt in IServ das Recht „OAuth verwenden“ oder ist der Client auf Gruppen beschränkt?';
+  if (/redirect/i.test(m)) return 'Ursache: Weiterleitungs-URI passt nicht – in IServ muss genau BASE_URL/auth/callback stehen.';
+  if (/state/i.test(m)) return 'Ursache: Die Sitzung ging unterwegs verloren (Cookie). Bitte die Seite über die richtige Adresse (BASE_URL) öffnen und erneut versuchen.';
+  if (/abgelaufen/i.test(m)) return 'Ursache: Anmeldevorgang abgelaufen. Bitte erneut versuchen.';
+  if (/invalid_client|401/i.test(m)) return 'Ursache: Client-ID oder Client-Geheimnis passen nicht zu IServ (OIDC_CLIENT_ID / OIDC_CLIENT_SECRET).';
+  if (/invalid_grant/i.test(m)) return 'Ursache: IServ hat den Anmeldecode abgelehnt (doppelt verwendet, abgelaufen oder Weiterleitungs-URI abweichend). Bitte erneut versuchen.';
+  if (/Accountnamen/i.test(m)) return 'Ursache: IServ hat keinen Accountnamen geliefert – im IServ-Client den Scope „profile“ erlauben.';
+  if (/JWT|JWS|signature|issuer|audience|"iss"|"aud"|nonce/i.test(m)) return 'Ursache: Das Anmelde-Token von IServ ließ sich nicht prüfen (ISERV_URL muss genau https://maxe-del.de lauten).';
+  if (/fetch failed|ECONN|ETIMEDOUT|ENOTFOUND|Timeout/i.test(m)) return 'Ursache: Der Server erreicht IServ nicht.';
+  return 'Details stehen im App-Log unter „[auth] Callback fehlgeschlagen“.';
+}
 
 /** Vergleich Import ↔ Bestand über den Biber-Benutzernamen (für die Vorschau). */
 function importDiff(existing, rows) {
@@ -189,7 +206,7 @@ export function createApp(cfg = loadConfig()) {
       res.redirect(u.isAdmin && !own ? '/admin' : u.isTeacher && !own ? '/karten' : '/');
     } catch (err) {
       console.error('[auth] Callback fehlgeschlagen:', err.message);
-      req.session.loginError = 'Anmeldung hat nicht geklappt. Bitte noch einmal.';
+      req.session.loginError = `Anmeldung hat nicht geklappt. ${loginHint(err.message)}`;
       res.redirect('/');
     }
   });
@@ -433,9 +450,23 @@ export function createApp(cfg = loadConfig()) {
 
 // Direkt gestartet?
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const cfg = loadConfig();
-  const { app } = createApp(cfg);
+  let cfg, app;
+  try {
+    cfg = loadConfig();
+    ({ app } = createApp(cfg));
+  } catch (err) {
+    console.error(`\n[start] Biber-Portal kann nicht starten: ${err.message}\n`);
+    process.exit(1);
+  }
+  // Datenverzeichnis beschreibbar? (Persistent Directory mit falschen Rechten)
+  try {
+    const probe = path.join(cfg.dataDir, `.schreibtest-${process.pid}`);
+    fs.writeFileSync(probe, 'ok');
+    fs.unlinkSync(probe);
+  } catch (err) {
+    console.error(`[start] WARNUNG: ${cfg.dataDir} ist nicht beschreibbar (${err.code}). Importe können nicht gespeichert werden. In CapRover das Persistent Directory prüfen.`);
+  }
   app.listen(cfg.port, () => {
-    console.log(`Biber-Portal läuft auf Port ${cfg.port} (${cfg.baseUrl}), IServ: ${cfg.oidc.issuer}`);
+    console.log(`Biber-Portal läuft auf Port ${cfg.port} (${cfg.baseUrl}), IServ: ${cfg.oidc.issuer}, Admins: ${[...cfg.admins].join(', ') || '–'}`);
   });
 }
