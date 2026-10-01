@@ -121,7 +121,7 @@ export function createApp(cfg = loadConfig()) {
     const cred = store.byAccount(user.account);
     const settings = store.settings;
     if (cred && settings.credentialsVisible) store.markViewed(cred.id);
-    render(req, res, { title: 'Meine Zugangsdaten', page: 'student', body: studentPage({ user, cred, settings, phase: currentPhase(settings) }) });
+    render(req, res, { title: 'Meine Zugangsdaten', page: 'student', body: studentPage({ cfg, user, cred, settings, phase: currentPhase(settings) }) });
   });
 
   // ---------- IServ-Anmeldung ----------
@@ -312,7 +312,7 @@ export function createApp(cfg = loadConfig()) {
     if (!cred) return res.redirect('/admin#zuordnung');
     const fakeUser = { account: cred.account || '(ohne Zuordnung)', name: [cred.firstName, cred.lastName].filter(Boolean).join(' '), givenName: cred.firstName };
     const settings = store.settings;
-    render(req, res, { title: 'Vorschau', page: 'student', body: studentPage({ user: fakeUser, cred, settings, phase: currentPhase(settings), preview: true }) });
+    render(req, res, { title: 'Vorschau', page: 'student', body: studentPage({ cfg, user: fakeUser, cred, settings, phase: currentPhase(settings), preview: true }) });
   });
 
   // ---------- Fehler ----------

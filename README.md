@@ -1,4 +1,4 @@
-# Biber-Portal
+# Biber-Portal · Max-Planck-Gymnasium Delmenhorst
 
 Schülerinnen und Schüler melden sich mit ihrem **IServ-Konto (Single-Sign-On, OpenID Connect)** an, sehen ihre **Zugangsdaten für den Informatik-Biber** (Benutzername und Passwort, einzeln kopierbar) und kommen mit einem Klick zur **Anmeldung** bzw. zum **Schnupper-Biber**. Welche Weiterleitung im Vordergrund steht, ergibt sich automatisch aus den Wettbewerbsdaten oder wird manuell gesetzt.
 
@@ -75,7 +75,7 @@ DATA_KEY=<zufällig, mind. 32 Zeichen – nie wieder ändern>
 | `ISERV_URL` | Adresse des Schul-IServ (nur Domain, ohne `/iserv`). Muss dem `issuer` unter `https://<iserv>/.well-known/openid-configuration` entsprechen. |
 | `OIDC_CLIENT_ID` | Client-ID des Single-Sign-On-Clients in IServ. |
 | `OIDC_CLIENT_SECRET` | Client-Geheimnis des Single-Sign-On-Clients in IServ. |
-| `ADMIN_ACCOUNTS` | IServ-Accountnamen mit Zugriff auf die Verwaltung, kommagetrennt (z. B. `andre.bodendiek,kollegin.name`). |
+| `ADMIN_ACCOUNTS` | IServ-Accountnamen mit Zugriff auf die Verwaltung, kommagetrennt (z. B. `vorname.nachname,kollegin.name`). |
 | `SESSION_SECRET` | Zufallswert (≥ 32 Zeichen) zum Signieren der Sitzungen. Ändern meldet alle ab. |
 | `DATA_KEY` | Zufallswert (≥ 32 Zeichen), mit dem die Zugangsdaten verschlüsselt gespeichert werden (AES-256-GCM). **Nach dem ersten Start nie ändern** – sonst sind die gespeicherten Daten nicht mehr lesbar. Zusätzlich sicher aufbewahren (z. B. Passwortmanager). |
 
@@ -85,9 +85,11 @@ Geheimnisse erzeugen: `./build.sh secrets` (oder `openssl rand -base64 48`).
 
 | Variable | Standard | Wofür |
 |---|---|---|
-| `SCHOOL_NAME` | `Johann-Beckmann-Gymnasium Hoya` | Schulname in der Fußzeile |
-| `IMPRESSUM_URL` | leer | Link „Impressum“ in der Fußzeile |
-| `DATENSCHUTZ_URL` | leer | Link „Datenschutz“ in der Fußzeile |
+| `SCHOOL_NAME` | `Max-Planck-Gymnasium Delmenhorst` | Schulname in Navigation, Startseite, Fußzeile und Zugangskarte |
+| `SCHOOL_URL` | `https://www.maxe-online.de` | Link zur Schulwebseite (Logo, Fußzeile); leer = ausblenden |
+| `SCHOOL_ADDRESS` | `Max-Planck-Str. 4, 27749 Delmenhorst` | Adresse auf Startseite und in der Fußzeile; leer = ausblenden |
+| `IMPRESSUM_URL` | Impressum auf maxe-online.de | Link „Impressum“ in der Fußzeile; leer = ausblenden |
+| `DATENSCHUTZ_URL` | Datenschutz auf maxe-online.de | Link „Datenschutz“ in der Fußzeile; leer = ausblenden |
 | `TRUST_PROXY` | `1` (in Produktion) | Anzahl vertrauenswürdiger Proxys; hinter CapRover/nginx passt `1` |
 | `OIDC_SCOPE` | `openid profile email` | Angefragte Scopes |
 | `OIDC_ACCOUNT_CLAIM` | `preferred_username` | Claim, der den IServ-Accountnamen enthält |
@@ -154,7 +156,8 @@ lib/importer.js      CSV/XLSX-Import mit Spaltenerkennung
 lib/phase.js         Phasenlogik (Europe/Berlin)
 lib/views.js         Start- und Schüleransicht
 lib/admin-views.js   Verwaltung und Import-Vorschau
-public/              CSS (Aurora/Glas), JS, Favicon
+public/              CSS (Aurora/Glas, Maxe-Grün + MINT-EC-Gelb), JS, Favicon
+public/img/          Schullogo und MINT-EC-Logo (jeweils Hell-/Dunkelvariante)
 tools/mock-iserv.js  lokaler Test-IServ
 test/                node:test (Unit + E2E)
 ```
