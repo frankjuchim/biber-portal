@@ -143,27 +143,74 @@ test('Schüler:innen in mehreren Gruppen: zählen überall, gedruckt wird einmal
   assert.equal(skipped, 2);
 });
 
-test('Gruppenliste: mehrere Zeilen je Account und mehrere Gruppen je Zelle', async () => {
+test('IServ-Gruppenliste: eine Zeile pro Mitgliedschaft, Personen zusammengefasst', async () => {
   const { parseGroupFile } = await import('../lib/importer.js');
-  const csv = 'IServ;Gruppen\nmax.mustermann;Informatik 10, AG Robotik\nMax.Mustermann@schule.de;Informatik 10\nerika.musterfrau;Chor\n';
-  const { memberships } = await parseGroupFile(Buffer.from(csv), 'g.csv');
-  assert.deepEqual(memberships, [
-    { account: 'max.mustermann', groups: ['Informatik 10', 'AG Robotik'] },
-    { account: 'erika.musterfrau', groups: ['Chor'] },
+  // Format wie der IServ-Export „Gruppenliste“ (UTF-8 mit BOM, Semikolon, Anführungszeichen)
+  const csv = '\ufeffGruppe;Nachname;Vorname;Account;Klasse/Information\n' +
+    '"Jahrgang 10";Muster;"Anna Lena";anna.lena.muster;10a\n' +
+    '"Jahrgang 10";Beispiel;Tom;tom.beispiel;10b\n' +
+    '"Kurs 10-Informatik";Muster;"Anna Lena";anna.lena.muster;10a\n' +
+    '"Kurs 10-Informatik";Beispiel;Tom;tom.beispiel;10b\n' +
+    '"AG Robotik";Muster;"Anna Lena";Anna.Lena.Muster;10a\n';
+  const { persons, rows, hasNames } = await parseGroupFile(Buffer.from(csv), 'Export_Grouplist.csv');
+  assert.equal(rows, 5);
+  assert.ok(hasNames);
+  assert.deepEqual(persons, [
+    { account: 'anna.lena.muster', firstName: 'Anna Lena', lastName: 'Muster', className: '10a', groups: ['Jahrgang 10', 'Kurs 10-Informatik', 'AG Robotik'] },
+    { account: 'tom.beispiel', firstName: 'Tom', lastName: 'Beispiel', className: '10b', groups: ['Jahrgang 10', 'Kurs 10-Informatik'] },
   ]);
+});
 
+test('Zuordnung Biber → IServ über Klasse + Name: nur eindeutige Treffer', async () => {
+  const { matchCredentials, normClass, normName } = await import('../lib/matching.js');
+  assert.equal(normClass('Klasse 10C'), '10c');
+  assert.equal(normName('Zoé Bräunlich-Søren'), 'zoe braeunlich soren');
+  const persons = [
+    { account: 'anna.lena.muster', firstName: 'Anna Lena', lastName: 'Muster', className: '10a' },
+    { account: 'tom.beispiel', firstName: 'Tom', lastName: 'Beispiel', className: '10b' },
+    { account: 'mia.schulz', firstName: 'Mia', lastName: 'Schulz', className: '10c' },
+    { account: 'mia.schulz2', firstName: 'Mia', lastName: 'Schulz', className: '10c' }, // gleicher Name, gleiche Klasse
+    { account: 'ben.mueller', firstName: 'Ben', lastName: 'Müller', className: '10d' },
+    { account: 'ben.mueller2', firstName: 'Ben', lastName: 'Müller', className: '10e' }, // gleicher Name, andere Klasse
+    { account: 'schon.da', firstName: 'Schon', lastName: 'Da', className: '10a' },
+  ];
+  const creds = [
+    { id: '1', username: 'b1', firstName: 'Anna', lastName: 'Muster', className: 'Klasse 10A' }, // nur 1. Vorname
+    { id: '2', username: 'b2', firstName: 'Tom', lastName: 'Beispiel', className: '10b' },
+    { id: '3', username: 'b3', firstName: 'Mia', lastName: 'Schulz', className: '10c' },
+    { id: '4', username: 'b4', firstName: 'Ben', lastName: 'Mueller', className: '10e' },
+    { id: '5', username: 'b5', firstName: 'Ben', lastName: 'Müller', className: 'Info-AG' }, // Klasse unbekannt, Name doppelt
+    { id: '6', username: 'b6', firstName: 'Gibt', lastName: 'Esnicht', className: '10a' },
+    { id: '7', username: 'b7', firstName: 'Schon', lastName: 'Da', className: '10a', account: 'schon.da' },
+  ];
+  const m = matchCredentials(creds, persons);
+  const got = Object.fromEntries(m.proposals.map((p) => [p.cred.username, [p.person.account, p.level.id]]));
+  assert.deepEqual(got, {
+    b2: ['tom.beispiel', 'klasse'],
+    b4: ['ben.mueller2', 'klasse'],
+    b1: ['anna.lena.muster', 'vorname'],
+  });
+  assert.deepEqual(m.ambiguous.map((a) => [a.cred.username, a.candidates.map((c) => c.account)]), [
+    ['b3', ['mia.schulz', 'mia.schulz2']],
+    ['b5', ['ben.mueller', 'ben.mueller2']], // nicht „der übrig gebliebene“ Ben Müller
+  ]);
+  assert.deepEqual(m.unmatched.map((c) => c.username), ['b6']);
+  assert.equal(m.alreadyAssigned, 1);
+
+  // Gruppen und Zuordnungen landen im Speicher
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'biber-groups-'));
   const store = new Store(dir, 'k'.repeat(40));
   store.importRows([
-    { username: 'b1', password: 'p', account: 'max.mustermann', className: '10a' },
-    { username: 'b2', password: 'p', account: 'erika.musterfrau', className: '10b', groups: ['Alt'] },
+    { username: 'b1', password: 'p', account: '', firstName: 'Anna', lastName: 'Muster', className: '10a' },
+    { username: 'b2', password: 'p', account: 'tom.beispiel', className: '10b', groups: ['Alt'] },
   ], 'replace', 't');
-  assert.deepEqual(store.importGroups(memberships, 'add', 't'), { matched: 2, unknown: 0 });
-  assert.deepEqual(store.byAccount('erika.musterfrau').groups, ['Alt', 'Chor']);
-  store.importGroups([{ account: 'max.mustermann', groups: ['Neu'] }, { account: 'x.y', groups: ['Z'] }], 'replace', 't');
-  assert.deepEqual(store.byAccount('max.mustermann').groups, ['Neu']);
-  assert.deepEqual(store.byAccount('erika.musterfrau').groups, []);
-  // erneuter Biber-Import ohne Gruppenspalte behält die Gruppen
-  store.importRows([{ username: 'b1', password: 'p2', account: 'max.mustermann', className: '10a' }], 'merge', 't');
-  assert.deepEqual(store.byAccount('max.mustermann').groups, ['Neu']);
+  const id1 = store.all()[0].id;
+  assert.equal(store.assignMany([{ credId: id1, account: 'anna.lena.muster' }, { credId: id1, account: 'x' }], 't'), 1);
+  assert.deepEqual(store.importGroups([{ account: 'anna.lena.muster', groups: ['Kurs Info'] }, { account: 'tom.beispiel', groups: ['Kurs Info'] }, { account: 'fremd', groups: ['Z'] }], 'add', 't'), { matched: 2, unknown: 1 });
+  assert.deepEqual(store.byAccount('tom.beispiel').groups, ['Alt', 'Kurs Info']);
+  store.importGroups([{ account: 'anna.lena.muster', groups: ['Neu'] }], 'replace', 't');
+  assert.deepEqual(store.byAccount('tom.beispiel').groups, []);
+  // erneuter Biber-Import ohne Gruppenspalte behält Gruppen
+  store.importRows([{ username: 'b1', password: 'p2', account: 'anna.lena.muster', className: '10a' }], 'merge', 't');
+  assert.deepEqual(store.byAccount('anna.lena.muster').groups, ['Neu']);
 });

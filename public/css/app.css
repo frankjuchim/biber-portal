@@ -608,3 +608,5 @@ table.data.compact td { padding: 9px 8px; }
 .groups-import-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .groups-import-row input[type="file"] { flex: 1 1 260px; }
 .group-row input { flex: none; }
+.chips { list-style: none; padding: 0; margin: 10px 0 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.confirm-form .switch { display: flex; margin-bottom: 18px; }

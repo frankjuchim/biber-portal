@@ -14,7 +14,13 @@ Schülerinnen und Schüler melden sich mit ihrem **IServ-Konto (Single-Sign-On, 
 - Lehrkräfte werden über IServ erkannt: Rolle bzw. Gruppe „Lehrer“ (Scope `iserv:roles`, siehe `TEACHER_ROLES`). Zusätzlich gelten alle `ADMIN_ACCOUNTS` und `TEACHER_ACCOUNTS`.
 - Eine oder mehrere Gruppen wählen → druckfertiger DIN-A4-Bogen mit 8, 10 oder 12 Karten pro Blatt, Schnittlinien, Schullogo, Name, Gruppe, Benutzername, Passwort und Anmeldeadresse; auf Wunsch beginnt jede Gruppe auf einem neuen Blatt.
 - **Mehrere Gruppen je Schüler:in:** Neben der Klasse/dem Kurs aus dem Biber-Export kann jeder Zugang beliebig viele weitere Gruppen haben (z. B. „Informatik 10“, „AG Robotik“). Er erscheint in jeder dieser Gruppen. Werden mehrere Gruppen zusammen gedruckt, gibt es pro Person trotzdem nur eine Karte (in der ersten gewählten Gruppe).
-- Weitere Gruppen kommen aus: Verwaltung → Import → **„Gruppen zuordnen“** (Liste mit Spalten `IServ` und `Gruppen`; mehrere Gruppen je Zelle mit Komma oder eine Zeile pro Gruppe; „Ergänzen“ oder „Ersetzen“), einer Spalte `Gruppen` direkt im Biber-Import, oder einzeln über das Stift-Symbol.
+- Weitere Gruppen kommen aus: Verwaltung → Import → **„IServ-Gruppenliste“**, einer Spalte `Gruppen` direkt im Biber-Import, oder einzeln über das Stift-Symbol.
+
+**IServ-Gruppenliste: Zuordnung über Klasse + Name**
+- Im Biber lassen sich keine IServ-Accountnamen festlegen. Deshalb kann der Biber-Export **ohne** Spalte `IServ` importiert werden; die Zuordnung erledigt danach die IServ-Gruppenliste (Export mit `Gruppe; Nachname; Vorname; Account; Klasse/Information`, eine Zeile pro Gruppenmitgliedschaft, beliebig viele Gruppen/Kurse).
+- Abgleich in drei Stufen, jeweils **nur bei eindeutigen Treffern** (genau eine IServ-Person und genau ein Biber-Zugang mit diesem Schlüssel): 1. Klasse + Vor- + Nachname, 2. Vor- + Nachname (falls die Klasse im Biber anders heißt), 3. Klasse + Nachname + erster Vorname (Doppelvornamen). Groß-/Kleinschreibung, Umlaute (ä/ae), Akzente und „Klasse 10C“/„10c“ werden angeglichen.
+- Gleichnamige Schüler:innen werden nie geraten: Sie erscheinen in der Vorschau als „mehrdeutig“ mit den möglichen Accounts und werden in der Tabelle „Zuordnung“ von Hand eingetragen. Ebenso „nicht gefunden“ (z. B. abweichende Schreibweise).
+- Vorschau vor dem Übernehmen; bestehende Zuordnungen werden nie überschrieben. Personen aus der Liste ohne Biber-Zugang werden nicht gespeichert.
 - Drucken mit Skalierung 100 % und ohne Kopf-/Fußzeilen. Jeder Druck wird im Protokoll der Verwaltung vermerkt. Lehrkräfte sehen die Verwaltung nicht.
 
 **Verwaltung** (nur Accounts aus `ADMIN_ACCOUNTS`)
@@ -27,9 +33,9 @@ Schülerinnen und Schüler melden sich mit ihrem **IServ-Konto (Single-Sign-On, 
 ## Ablauf für die Lehrkraft
 
 1. In der Biber-Verwaltung (admin.informatik-biber.de) die Zugangsdaten als Excel oder CSV herunterladen.
-2. Spalte **`IServ`** ergänzen und je Zeile den IServ-Accountnamen eintragen, z. B. `max.mustermann`. (Groß-/Kleinschreibung und ein angehängtes `@domain` werden ignoriert.)
-3. Im Portal unter **Verwaltung → Import** hochladen, Vorschau prüfen, übernehmen.
-4. Offene Zuordnungen in der Tabelle nachtragen. Über das Auge-Symbol die Ansicht einer Schülerin/eines Schülers prüfen.
+2. Im Portal unter **Verwaltung → Import** hochladen, Vorschau prüfen, übernehmen. (Eine Spalte **`IServ`** mit Accountnamen ist optional.)
+3. In IServ die Gruppenliste exportieren (Jahrgang bzw. Klassen und Kurse) und unter **Verwaltung → Import → IServ-Gruppenliste** hochladen. Die Vorschau zeigt, wer über Klasse + Name zugeordnet wird und wer nicht; übernehmen.
+4. Offene/mehrdeutige Zuordnungen in der Tabelle nachtragen. Über das Auge-Symbol die Ansicht einer Schülerin/eines Schülers prüfen.
 
 Erkannte Spaltenköpfe (tolerant): `Benutzername`, `Passwort`, `IServ` / `IServ-Account` / `Account`, `Vorname`, `Nachname`, `Klassen-/Kursname` / `Klasse`, `Stufe`. Titelzeilen oberhalb der Kopfzeile, Semikolon/Komma/Tab sowie UTF-8 und Windows-1252 (Excel-CSV) werden erkannt. Eine Vorlage gibt es in der Verwaltung.
 

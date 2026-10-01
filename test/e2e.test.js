@@ -225,10 +225,16 @@ test('Lehrkraft (IServ-Rolle) druckt Zugangskarten einer Gruppe', async () => {
   page = await admin0.go('/admin');
   const fd = new FormData();
   fd.set('_csrf', csrfOf(page.text));
-  fd.set('mode', 'add');
-  fd.set('file', new Blob(['IServ;Gruppen\nlena.ohnedaten;Informatik 10, AG Robotik\n']), 'gruppen.csv');
+  // IServ-Gruppenliste: Zeile pro Gruppe; lena ist schon zugeordnet, „Neu Person“ hat keinen Zugang
+  fd.set('file', new Blob(['\ufeffGruppe;Nachname;Vorname;Account;Klasse/Information\n"Informatik 10";Ohnedaten;Lena;lena.ohnedaten;8c\n"AG Robotik";Ohnedaten;Lena;lena.ohnedaten;8c\n"AG Robotik";Person;Neu;neu.person;8c\n']), 'Export_Grouplist.csv');
   page = await admin0.go('/admin/groups', { method: 'POST', body: fd });
-  assert.match(page.text, /Gruppen übernommen: 1 Zugänge aktualisiert/);
+  assert.match(page.text, /2 Personen erkannt/);
+  page = await admin0.go('/admin/groups/confirm', {
+    method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ _csrf: csrfOf(page.text), token: page.text.match(/name="token" value="([^"]+)"/)[1], mode: 'add', assign: '1' }),
+  });
+  assert.match(page.text, /Gruppen für 1 Zugänge/);
+  assert.ok(!page.text.includes('neu.person')); // Personen ohne Biber-Zugang werden nicht gespeichert
   page = await teacher.go('/karten');
   assert.match(page.text, /name="g" value="Informatik 10"/);
   assert.match(page.text, /name="g" value="8c"/);
@@ -253,6 +259,6 @@ test('Lehrkraft (IServ-Rolle) druckt Zugangskarten einer Gruppe', async () => {
   page = await login(admin, 'andre.bodendiek');
   page = await admin.go('/admin');
   assert.match(page.text, /Karten gedruckt: 8c \(1\)/);
-  assert.match(page.text, /Gruppen ergänzt: 1 Zugänge/);
+  assert.match(page.text, /Gruppen ergänzt: 1 Zugänge, 1 Accounts ohne Zugang/);
 });
 

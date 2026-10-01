@@ -12,11 +12,12 @@ import { loadConfig, normalizeAccount } from './lib/config.js';
 import { Store } from './lib/store.js';
 import { createOidcClient } from './lib/oidc.js';
 import { parseCredentialFile, parseGroupFile } from './lib/importer.js';
+import { matchCredentials } from './lib/matching.js';
 import { currentPhase, PHASES } from './lib/phase.js';
 import { detectTeacher, roleNames, groupsOf, credentialsForGroups } from './lib/teacher.js';
 import { teacherPage, cardsSheet, LAYOUTS } from './lib/teacher-views.js';
 import { layout, landingPage, studentPage, messagePage } from './lib/views.js';
-import { adminPage, importPreviewPage, credentialFormPage } from './lib/admin-views.js';
+import { adminPage, importPreviewPage, credentialFormPage, groupPreviewPage } from './lib/admin-views.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -221,7 +222,7 @@ export function createApp(cfg = loadConfig()) {
   app.post('/admin/import/confirm', requireAdmin, checkCsrf, (req, res) => {
     const pending = pendingImports.get(req.body.token);
     pendingImports.delete(req.body.token);
-    if (!pending || pending.actor !== actor(req)) {
+    if (!pending || pending.kind === 'groups' || pending.actor !== actor(req)) {
       setFlash(req, 'error', 'Die Vorschau ist abgelaufen. Bitte die Datei erneut hochladen.');
       return res.redirect('/admin#import');
     }
@@ -234,21 +235,46 @@ export function createApp(cfg = loadConfig()) {
 
   // ---------- Weitere Gruppen (Gruppenliste) ----------
   app.get('/admin/gruppen-vorlage.csv', requireAdmin, (req, res) => {
-    const csv = '\ufeffIServ;Gruppen\nmax.mustermann;Informatik 10, AG Robotik\nerika.musterfrau;Informatik 10\n';
+    const csv = '\ufeffGruppe;Nachname;Vorname;Account;Klasse/Information\n"Kurs Informatik 10";Mustermann;Max;max.mustermann;10a\n"AG Robotik";Mustermann;Max;max.mustermann;10a\n"Kurs Informatik 10";Musterfrau;Erika;erika.musterfrau;10b\n';
     res.type('text/csv; charset=utf-8').attachment('biber-gruppen-vorlage.csv').send(csv);
   });
 
+  // Schritt 1: Liste lesen, Zuordnung über Klasse + Name vorschlagen, Vorschau zeigen
   app.post('/admin/groups', requireAdmin, upload.single('file'), checkCsrf, async (req, res) => {
     try {
       if (!req.file) throw new Error('Bitte eine Datei auswählen.');
-      const { memberships } = await parseGroupFile(req.file.buffer, req.file.originalname);
-      const mode = req.body.mode === 'replace' ? 'replace' : 'add';
-      const { matched, unknown } = store.importGroups(memberships, mode, actor(req));
-      setFlash(req, 'success', `Gruppen übernommen: ${matched} Zugänge aktualisiert.${unknown ? ` ${unknown} Accounts aus der Liste haben (noch) keinen Biber-Zugang.` : ''}`);
+      const result = await parseGroupFile(req.file.buffer, req.file.originalname);
+      const match = result.hasNames ? matchCredentials(store.all(), result.persons) : null;
+      const token = crypto.randomBytes(18).toString('base64url');
+      for (const [k, v] of pendingImports) if (Date.now() - v.at > 30 * 60 * 1000) pendingImports.delete(k);
+      pendingImports.set(token, {
+        kind: 'groups',
+        persons: result.persons.map(({ account, groups }) => ({ account, groups })),
+        assignments: (match?.proposals || []).map((p) => ({ credId: p.cred.id, account: p.person.account })),
+        actor: actor(req),
+        at: Date.now(),
+      });
+      const knownAccounts = store.all().map((c) => c.account).filter(Boolean);
+      render(req, res, { title: 'Gruppenliste', page: 'import', body: groupPreviewPage({ result, match, token, csrf: req.session.csrf, filename: req.file.originalname, knownAccounts }) });
     } catch (err) {
-      setFlash(req, 'error', `Gruppen nicht übernommen: ${err.message}`);
+      setFlash(req, 'error', `Gruppenliste nicht lesbar: ${err.message}`);
+      res.redirect('/admin#import');
     }
-    res.redirect('/admin#import');
+  });
+
+  // Schritt 2: Zuordnungen und Gruppen übernehmen
+  app.post('/admin/groups/confirm', requireAdmin, checkCsrf, (req, res) => {
+    const pending = pendingImports.get(req.body.token);
+    pendingImports.delete(req.body.token);
+    if (!pending || pending.kind !== 'groups' || pending.actor !== actor(req)) {
+      setFlash(req, 'error', 'Die Vorschau ist abgelaufen. Bitte die Liste erneut hochladen.');
+      return res.redirect('/admin#import');
+    }
+    const assigned = req.body.assign === '1' && pending.assignments.length ? store.assignMany(pending.assignments, actor(req)) : 0;
+    const { matched } = store.importGroups(pending.persons, req.body.mode === 'replace' ? 'replace' : 'add', actor(req));
+    const open = store.stats().unassigned;
+    setFlash(req, 'success', `Übernommen: ${assigned} IServ-Accounts zugeordnet, Gruppen für ${matched} Zugänge.${open ? ` ${open} Zugänge noch ohne IServ-Account.` : ''}`);
+    res.redirect('/admin#zuordnung');
   });
 
   // ---------- Einzelne Zugänge (Formular) ----------
