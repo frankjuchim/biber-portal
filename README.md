@@ -39,6 +39,17 @@ Schülerinnen und Schüler melden sich mit ihrem **IServ-Konto (Single-Sign-On, 
 
 Erkannte Spaltenköpfe (tolerant): `Benutzername`, `Passwort`, `IServ` / `IServ-Account` / `Account`, `Vorname`, `Nachname`, `Klassen-/Kursname` / `Klasse`, `Stufe`. Titelzeilen oberhalb der Kopfzeile, Semikolon/Komma/Tab sowie UTF-8 und Windows-1252 (Excel-CSV) werden erkannt. Eine Vorlage gibt es in der Verwaltung.
 
+## Mehrere Jahre nutzen
+
+Die Biber-Konten der Schüler:innen bleiben von Jahr zu Jahr gleich (der Biber-Export führt die Teilnahmen als Spalten wie „Informatik-Biber 2025“, „Schnupper-Biber 2026“). Ablauf zu Beginn eines neuen Wettbewerbsjahres:
+
+1. **Einstellungen:** Termine (Schnupper-Biber, Biberwochen) auf das neue Jahr setzen. Die Jahreszahl im Portal und auf den Karten ergibt sich aus „Biberwochen ab“.
+2. **Biber-Export neu hochladen** (direkt die Excel-Datei aus der Biber-Verwaltung, keine Bearbeitung nötig) und **„Abgleichen (neues Schuljahr)“** wählen: Klassen, Namen und Passwörter werden aktualisiert, Abgänger entfernt, neue Fünftklässler hinzugefügt. **IServ-Zuordnungen und Gruppen bleiben** für alle, die schon da waren (Abgleich über den Biber-Benutzernamen).
+3. **Aktuelle IServ-Gruppenliste** hochladen: ordnet die Neuen über Klasse + Name zu und aktualisiert die Kurse (für veraltete Kurse „Ersetzen“ wählen).
+4. Optional: unter „Protokoll“ die Abrufstatistik zurücksetzen.
+
+„Alles löschen“ ist nur nötig, wenn das Portal nicht weiter genutzt wird.
+
 ## IServ einrichten (Single-Sign-On)
 
 In IServ als Administrator: **Verwaltung → System → Single-Sign-On → Hinzufügen** (OAuth/OpenID Connect):

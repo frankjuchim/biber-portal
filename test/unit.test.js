@@ -194,7 +194,9 @@ test('Zuordnung Biber → IServ über Klasse + Name: nur eindeutige Treffer', as
     ['b3', ['mia.schulz', 'mia.schulz2']],
     ['b5', ['ben.mueller', 'ben.mueller2']], // nicht „der übrig gebliebene“ Ben Müller
   ]);
-  assert.deepEqual(m.unmatched.map((c) => c.username), ['b6']);
+  assert.deepEqual(m.unmatched.map((c) => c.username), ['b6']); // b6 ist in 10a – Klasse kommt in der Liste vor
+  const m2 = matchCredentials([...creds, { id: '8', username: 'b8', firstName: 'X', lastName: 'Y', className: '5a' }], persons);
+  assert.equal(m2.outOfScope, 1); // 5a kommt in der Liste nicht vor → nicht als „nicht gefunden“ melden
   assert.equal(m.alreadyAssigned, 1);
 
   // Gruppen und Zuordnungen landen im Speicher
@@ -213,4 +215,33 @@ test('Zuordnung Biber → IServ über Klasse + Name: nur eindeutige Treffer', as
   // erneuter Biber-Import ohne Gruppenspalte behält Gruppen
   store.importRows([{ username: 'b1', password: 'p2', account: 'anna.lena.muster', className: '10a' }], 'merge', 't');
   assert.deepEqual(store.byAccount('anna.lena.muster').groups, ['Neu']);
+});
+
+test('Mehrere Jahre: neuer Biber-Import behält IServ-Zuordnung und Gruppen', async () => {
+  const { contestYear } = await import('../lib/phase.js');
+  assert.equal(contestYear({ contestStart: '2027-11-08' }), '2027');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'biber-years-'));
+  const store = new Store(dir, 'k'.repeat(40));
+  // Jahr 1: Import ohne IServ-Spalte, dann Zuordnung + Gruppen
+  store.importRows([
+    { username: 'aanna', password: 'p1', firstName: 'Anna', lastName: 'A', className: '9a' },
+    { username: 'bben', password: 'p2', firstName: 'Ben', lastName: 'B', className: '13' },
+  ], 'replace', 't');
+  const anna = store.all().find((c) => c.username === 'aanna');
+  store.assignMany([{ credId: anna.id, account: 'anna.a' }], 't');
+  store.importGroups([{ account: 'anna.a', groups: ['Kurs Info 9'] }], 'add', 't');
+  store.markViewed(anna.id);
+  // Jahr 2: neuer Export (Biber-Konten bleiben, Klasse steigt, Abiturient fehlt, Neuer kommt dazu)
+  assert.deepEqual(store.importRows([
+    { username: 'aanna', password: 'p1', firstName: 'Anna', lastName: 'A', className: '10a' },
+    { username: 'cneu', password: 'p3', firstName: 'Neu', lastName: 'C', className: '5a' },
+  ], 'replace', 't'), { added: 1, updated: 1 });
+  const a2 = store.byAccount('anna.a');
+  assert.equal(a2.username, 'aanna');
+  assert.equal(a2.className, '10a');
+  assert.deepEqual(a2.groups, ['Kurs Info 9']);
+  assert.equal(a2.viewCount, 1);
+  assert.deepEqual(store.all().map((c) => c.username).sort(), ['aanna', 'cneu']);
+  store.resetViews('t');
+  assert.equal(store.byAccount('anna.a').viewCount, 0);
 });

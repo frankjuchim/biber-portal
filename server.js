@@ -13,13 +13,26 @@ import { Store } from './lib/store.js';
 import { createOidcClient } from './lib/oidc.js';
 import { parseCredentialFile, parseGroupFile } from './lib/importer.js';
 import { matchCredentials } from './lib/matching.js';
-import { currentPhase, PHASES } from './lib/phase.js';
+import { currentPhase, PHASES, contestYear } from './lib/phase.js';
 import { detectTeacher, roleNames, groupsOf, credentialsForGroups } from './lib/teacher.js';
 import { teacherPage, cardsSheet, LAYOUTS } from './lib/teacher-views.js';
 import { layout, landingPage, studentPage, messagePage } from './lib/views.js';
 import { adminPage, importPreviewPage, credentialFormPage, groupPreviewPage } from './lib/admin-views.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+/** Vergleich Import ↔ Bestand über den Biber-Benutzernamen (für die Vorschau). */
+function importDiff(existing, rows) {
+  const incoming = new Set(rows.map((r) => r.username.toLowerCase()));
+  const known = new Map(existing.map((c) => [c.username.toLowerCase(), c]));
+  const same = [...incoming].filter((u) => known.has(u));
+  return {
+    added: incoming.size - same.length,
+    same: same.length,
+    keptAccounts: same.filter((u) => known.get(u).account).length,
+    gone: existing.filter((c) => !incoming.has(c.username.toLowerCase())).length,
+  };
+}
 
 function loginOrigin(url) {
   try {
@@ -138,7 +151,7 @@ export function createApp(cfg = loadConfig()) {
     const user = req.session.user;
     if (!user) {
       const error = req.session.loginError; req.session.loginError = null;
-      return render(req, res, { title: 'Anmelden', page: 'landing', body: landingPage({ cfg, error, devLogin: cfg.devLogin, csrf: req.session.csrf }) });
+      return render(req, res, { title: 'Anmelden', page: 'landing', body: landingPage({ cfg, error, devLogin: cfg.devLogin, csrf: req.session.csrf, year: contestYear(store.settings) }) });
     }
     const cred = store.byAccount(user.account);
     const settings = store.settings;
@@ -212,7 +225,7 @@ export function createApp(cfg = loadConfig()) {
       // alte, verwaiste Vorschauen aufräumen
       for (const [k, v] of pendingImports) if (Date.now() - v.at > 30 * 60 * 1000) pendingImports.delete(k);
       pendingImports.set(token, { result, filename: req.file.originalname, actor: actor(req), at: Date.now() });
-      render(req, res, { title: 'Import-Vorschau', page: 'import', body: importPreviewPage({ result, token, csrf: req.session.csrf, filename: req.file.originalname, existingCount: store.all().length }) });
+      render(req, res, { title: 'Import-Vorschau', page: 'import', body: importPreviewPage({ result, token, csrf: req.session.csrf, filename: req.file.originalname, existingCount: store.all().length, diff: importDiff(store.all(), result.rows) }) });
     } catch (err) {
       setFlash(req, 'error', `Import nicht möglich: ${err.message}`);
       res.redirect('/admin#import');
@@ -333,6 +346,12 @@ export function createApp(cfg = loadConfig()) {
     res.redirect('/admin#zuordnung');
   });
 
+  app.post('/admin/reset-views', requireAdmin, checkCsrf, (req, res) => {
+    store.resetViews(actor(req));
+    setFlash(req, 'success', 'Abrufstatistik zurückgesetzt.');
+    res.redirect('/admin#protokoll');
+  });
+
   app.post('/admin/clear', requireAdmin, checkCsrf, (req, res) => {
     if (req.body.confirm !== 'LÖSCHEN') {
       setFlash(req, 'error', 'Bitte zur Bestätigung LÖSCHEN eingeben.');
@@ -389,7 +408,7 @@ export function createApp(cfg = loadConfig()) {
     if (!groups.length) return res.redirect('/karten');
     const { entries, skipped } = credentialsForGroups(store.all(), groups.map((g) => g.key));
     store.note(actor(req), 'print', `Karten gedruckt: ${groups.map((g) => g.label).join(', ')} (${entries.length})`);
-    render(req, res, { title: 'Karten drucken', page: 'cards', body: cardsSheet({ cfg, entries, skipped, perPage, split: req.query.split !== '0', groupLabels: groups.map((g) => g.label) }) });
+    render(req, res, { title: 'Karten drucken', page: 'cards', body: cardsSheet({ cfg, entries, skipped, perPage, split: req.query.split !== '0', groupLabels: groups.map((g) => g.label), year: contestYear(store.settings) }) });
   });
 
   app.get('/admin/preview/:id', requireAdmin, (req, res) => {
