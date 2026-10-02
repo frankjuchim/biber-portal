@@ -95,6 +95,9 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 .small { font-size: .86rem; }
 .mono { font-family: var(--mono); }
 .grad { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+/* Verlaufsschrift: Hintergrund reicht nur bis zum Rand des Kastens – Innenabstand gibt Ober-/Unterlängen
+   und eng gesetzten Buchstaben Platz, der negative Außenabstand hält das Layout unverändert. */
+.grad, .mega span, .stat-num span { display: inline-block; padding: .1em .08em .16em; margin: -.1em -.08em -.16em; }
 :focus-visible { outline: 2px solid var(--link); outline-offset: 3px; border-radius: 8px; }
 
 /* ---------- Hintergrund ---------- */
@@ -168,8 +171,10 @@ main { width: min(1080px, calc(100% - 44px)); margin: 0 auto; padding: 8px 0 80p
 @keyframes live { 70% { box-shadow: 0 0 0 9px rgba(var(--a1-rgb), 0); } 100% { box-shadow: 0 0 0 0 rgba(var(--a1-rgb), 0); } }
 
 /* Wort-für-Wort-Reveal (per JS aufgeteilt) */
-.w { display: inline-block; overflow: hidden; vertical-align: top; padding-bottom: .08em; margin-bottom: -.08em; }
-.wi { display: inline-block; }
+/* .w schneidet für die Einblend-Animation ab – genug Platz für Umlaute, Unterlängen (g, p, y) und
+   negative Laufweite, sonst werden Buchstaben je nach Systemschrift (z. B. SF Pro auf Apple-Geräten) beschnitten. */
+.w { display: inline-block; overflow: hidden; vertical-align: top; padding: .14em .1em .28em; margin: -.14em -.1em -.28em; }
+.wi { display: inline-block; padding: .14em .1em .28em; margin: -.14em -.1em -.28em; }
 .js [data-split] .wi { transform: translateY(105%); opacity: 0; filter: blur(8px); }
 .js.is-ready [data-split] .wi { animation: word-in .95s var(--ease) forwards; animation-delay: calc(80ms + var(--d, 0) * 70ms); }
 @keyframes word-in { to { transform: none; opacity: 1; filter: blur(0); } }
