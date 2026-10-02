@@ -114,7 +114,7 @@ test('kompletter Ablauf', async () => {
 
   // 4) Abruf wurde gezählt
   page = await admin.go('/admin');
-  assert.match(page.text, /1× abgerufen/);
+  assert.match(page.text, /(Schnupper|Wettbewerb) 1×/); // je nach aktuellem Zeitraum
 
   // 5) Zugangsdaten verbergen
   page = await admin.go('/admin/settings', {

@@ -14,7 +14,7 @@ import { Store } from './lib/store.js';
 import { createOidcClient } from './lib/oidc.js';
 import { parseCredentialFile, parseGroupFile } from './lib/importer.js';
 import { matchCredentials } from './lib/matching.js';
-import { currentPhase, PHASES, contestYear } from './lib/phase.js';
+import { currentPhase, PHASES, contestYear, viewBucket } from './lib/phase.js';
 import { detectTeacher, roleNames, groupsOf, credentialsForGroups } from './lib/teacher.js';
 import { teacherPage, cardsSheet, LAYOUTS } from './lib/teacher-views.js';
 import { layout, landingPage, studentPage, messagePage } from './lib/views.js';
@@ -173,7 +173,7 @@ export function createApp(cfg = loadConfig()) {
     }
     const cred = store.byAccount(user.account);
     const settings = store.settings;
-    if (cred && settings.credentialsVisible) store.markViewed(cred.id);
+    if (cred && settings.credentialsVisible) store.markViewed(cred.id, viewBucket(currentPhase(settings)));
     render(req, res, { title: 'Meine Zugangsdaten', page: 'student', body: studentPage({ cfg, user, cred, settings, phase: currentPhase(settings) }) });
   });
 

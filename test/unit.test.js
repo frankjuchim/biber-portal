@@ -267,3 +267,47 @@ test('Klassen-/Jahrgangsstufe und Biber-Altersgruppe', async () => {
   assert.deepEqual(levelInfo({ level: '7-8', className: '7b' }), { num: 7, label: 'Klassenstufe 7', group: '7–8' }); // Stufe als Spanne
   assert.equal(levelInfo({ level: '', className: 'Info-AG' }), null);
 });
+
+test('Abrufe getrennt nach Schnupper-Biber und Wettbewerb', async () => {
+  const { viewBucket } = await import('../lib/phase.js');
+  assert.equal(viewBucket('vorbereitung'), 'schnupper');
+  assert.equal(viewBucket('schnupper'), 'schnupper');
+  assert.equal(viewBucket('pause'), 'schnupper');
+  assert.equal(viewBucket('wettbewerb'), 'wettbewerb');
+  assert.equal(viewBucket('beendet'), 'wettbewerb');
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'biber-views-'));
+  let store = new Store(dir, 'k'.repeat(40));
+  store.importRows([{ username: 'a', password: 'p', account: 'a.a' }, { username: 'b', password: 'p', account: 'b.b' }], 'replace', 't');
+  const [a, b] = store.all();
+  store.markViewed(a.id, 'schnupper');
+  store.markViewed(a.id, 'schnupper');
+  store.markViewed(b.id, 'schnupper');
+  store.markViewed(a.id, 'wettbewerb');
+  assert.deepEqual(store.byId(a.id).views, { schnupper: 2, wettbewerb: 1 });
+  assert.equal(store.byId(a.id).viewCount, 3);
+  let s = store.stats();
+  assert.equal(s.viewedSchnupper, 2);
+  assert.equal(s.viewedWettbewerb, 1);
+  // bleibt nach Neustart und erneutem Import erhalten
+  store = new Store(dir, 'k'.repeat(40));
+  store.importRows([{ username: 'a', password: 'p2' }], 'merge', 't');
+  assert.deepEqual(store.byId(a.id).views, { schnupper: 2, wettbewerb: 1 });
+  store.resetViews('t');
+  assert.deepEqual(store.byId(a.id).views, { schnupper: 0, wettbewerb: 0 });
+});
+
+test('Alter Datenstand: bisherige Abrufe zählen zum Schnupper-Biber', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'biber-views-old-'));
+  let store = new Store(dir, 'k'.repeat(40));
+  store.importRows([{ username: 'a', password: 'p', account: 'a.a' }], 'replace', 't');
+  // Datensatz wie vor dieser Änderung: nur viewCount/lastViewedAt
+  const rec = store.all()[0];
+  delete rec.views; delete rec.viewedAt;
+  rec.viewCount = 4; rec.firstViewedAt = rec.lastViewedAt = '2026-10-01T10:00:00.000Z';
+  store.note('t', 'x', 'speichern');
+  store = new Store(dir, 'k'.repeat(40));
+  assert.deepEqual(store.all()[0].views, { schnupper: 4, wettbewerb: 0 });
+  assert.deepEqual(store.all()[0].viewedAt, { schnupper: '2026-10-01T10:00:00.000Z', wettbewerb: null });
+  assert.equal(store.stats().viewedSchnupper, 1);
+});
