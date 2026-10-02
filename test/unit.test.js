@@ -256,3 +256,14 @@ test('Login-Fehler werden verständlich erklärt', async () => {
   assert.match(loginHint('Token-Abruf fehlgeschlagen (400): Grant type is unauthorized for this client'), /Authorization Code/);
   assert.match(loginHint('irgendwas'), /App-Log/);
 });
+
+test('Klassen-/Jahrgangsstufe und Biber-Altersgruppe', async () => {
+  const { levelInfo } = await import('../lib/phase.js');
+  assert.deepEqual(levelInfo({ level: '8', className: '8b' }), { num: 8, label: 'Klassenstufe 8', group: '7–8' });
+  assert.deepEqual(levelInfo({ level: '5', className: '5a' }), { num: 5, label: 'Klassenstufe 5', group: '5–6' });
+  assert.deepEqual(levelInfo({ level: '10', className: '10e' }), { num: 10, label: 'Klassenstufe 10', group: '9–10' });
+  assert.deepEqual(levelInfo({ level: '12', className: '12' }), { num: 12, label: 'Jahrgangsstufe 12', group: '11–13' });
+  assert.deepEqual(levelInfo({ level: '', className: '9c' }), { num: 9, label: 'Klassenstufe 9', group: '9–10' }); // aus der Klasse
+  assert.deepEqual(levelInfo({ level: '7-8', className: '7b' }), { num: 7, label: 'Klassenstufe 7', group: '7–8' }); // Stufe als Spanne
+  assert.equal(levelInfo({ level: '', className: 'Info-AG' }), null);
+});
