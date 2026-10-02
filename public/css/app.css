@@ -618,3 +618,5 @@ table.data.compact td { padding: 9px 8px; }
 .level-line { margin: -6px 0 14px; font-size: .9rem; color: var(--muted); }
 .level-line strong { color: var(--ink); font-weight: 600; }
 .empty .level-line { margin: 14px 0 0; }
+.stat-sub { display: block; margin-top: 10px; font-size: .78rem; color: var(--muted); }
+.views { display: flex; flex-wrap: wrap; gap: 4px; }

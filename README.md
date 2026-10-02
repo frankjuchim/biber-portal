@@ -48,6 +48,8 @@ Die Biber-Konten der Schüler:innen bleiben von Jahr zu Jahr gleich (der Biber-E
 3. **Aktuelle IServ-Gruppenliste** hochladen: ordnet die Neuen über Klasse + Name zu und aktualisiert die Kurse (für veraltete Kurse „Ersetzen“ wählen).
 4. Optional: unter „Protokoll“ die Abrufstatistik zurücksetzen.
 
+**Abrufstatistik:** Abrufe werden getrennt gezählt – **Schnupper** (vor den Biberwochen) und **Wettbewerb** (ab Start der Biberwochen, laut Einstellungen bzw. Phase). Die Kachel in der Verwaltung zeigt groß den aktuellen Zeitraum und darunter den anderen; in der Tabelle steht beides je Zugang. Ein Zurücksetzen zum Start der Biberwochen ist dadurch nicht nötig.
+
 „Alles löschen“ ist nur nötig, wenn das Portal nicht weiter genutzt wird.
 
 ## IServ einrichten (Single-Sign-On)
