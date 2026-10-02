@@ -615,3 +615,6 @@ table.data.compact td { padding: 9px 8px; }
 .group-row input { flex: none; }
 .chips { list-style: none; padding: 0; margin: 10px 0 0; display: flex; flex-wrap: wrap; gap: 8px; }
 .confirm-form .switch { display: flex; margin-bottom: 18px; }
+.level-line { margin: -6px 0 14px; font-size: .9rem; color: var(--muted); }
+.level-line strong { color: var(--ink); font-weight: 600; }
+.empty .level-line { margin: 14px 0 0; }
