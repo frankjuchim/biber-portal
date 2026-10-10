@@ -311,3 +311,16 @@ test('Alter Datenstand: bisherige Abrufe zählen zum Schnupper-Biber', async () 
   assert.deepEqual(store.all()[0].viewedAt, { schnupper: '2026-10-01T10:00:00.000Z', wettbewerb: null });
   assert.equal(store.stats().viewedSchnupper, 1);
 });
+
+test('Team: Gruppen-Nummer je Zeitraum und Altersgruppe', async () => {
+  const { teamGroupId, teamJoinUrl } = await import('../lib/phase.js');
+  const s = { teamGroups: { schnupper: { '11-13': '6021', '7-8': '' }, wettbewerb: { '11-13': '7001' } } };
+  assert.equal(teamGroupId(s, 'schnupper', { level: '13', className: '13' }), '6021');
+  assert.equal(teamGroupId(s, 'pause', { level: '12' }), '6021');
+  assert.equal(teamGroupId(s, 'wettbewerb', { level: '11' }), '7001');
+  assert.equal(teamGroupId(s, 'schnupper', { level: '8', className: '8b' }), '');
+  assert.equal(teamGroupId(s, 'schnupper', { className: 'AG' }), '');
+  assert.equal(teamGroupId({ teamGroups: { schnupper: { '11-13': '60;21' } } }, 'schnupper', { level: '13' }), '');
+  assert.equal(teamJoinUrl('https://wettbewerb.informatik-biber.de/index.php?action=login', '6021'), 'https://wettbewerb.informatik-biber.de/index.php?action=user_join&grp_id=6021');
+  assert.equal(teamJoinUrl('http://unsicher.example/index.php', '1'), '');
+});
