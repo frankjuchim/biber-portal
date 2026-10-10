@@ -173,20 +173,7 @@
     sync();
   }
 
-  // ---------- Zugangsdaten ----------
-  var card = document.querySelector('[data-cred]');
-  if (!card) return;
-
-  var userOut = card.querySelector('[data-decode]');
-  if (userOut) {
-    var real = userOut.textContent;
-    setTimeout(function () { decode(userOut, real, 900); }, 450);
-  }
-
-  function valueOf(field) {
-    var out = card.querySelector('[data-field="' + field + '"] [data-value]');
-    return out ? (out.getAttribute('data-secret') || out.textContent).trim() : '';
-  }
+  // ---------- Zugangsdaten (eigene Karte und ggf. die der Teampartner:in) ----------
   function legacyCopy(text) {
     return new Promise(function (resolve, reject) {
       var ta = document.createElement('textarea');
@@ -205,40 +192,55 @@
     return legacyCopy(text);
   }
 
-  var meter = card.querySelector('[data-meter]');
-  function updateProgress() {
-    var done = card.querySelectorAll('.field.is-done').length;
-    if (meter) meter.style.width = (done / 2 * 100) + '%';
-    var go = card.querySelector('.go');
-    if (go) go.classList.toggle('is-done', done >= 2);
+  function initCard(card, i) {
+    var userOut = card.querySelector('[data-decode]');
+    if (userOut) {
+      var real = userOut.textContent;
+      setTimeout(function () { decode(userOut, real, 900); }, 450 + i * 250);
+    }
+
+    function valueOf(field) {
+      var out = card.querySelector('[data-field="' + field + '"] [data-value]');
+      return out ? (out.getAttribute('data-secret') || out.textContent).trim() : '';
+    }
+
+    var meter = card.querySelector('[data-meter]');
+    function updateProgress() {
+      var done = card.querySelectorAll('.field.is-done').length;
+      if (meter) meter.style.width = (done / 2 * 100) + '%';
+      var go = card.querySelector('.go');
+      if (go) go.classList.toggle('is-done', done >= 2);
+    }
+
+    card.querySelectorAll('[data-copy]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var field = btn.getAttribute('data-copy');
+        var label = btn.querySelector('.lbl');
+        copyText(valueOf(field)).then(function () {
+          btn.classList.add('done');
+          if (label) label.textContent = 'Kopiert';
+          btn.closest('.field').classList.add('is-done');
+          updateProgress();
+          window.biberToast(field === 'username' ? 'Benutzername kopiert.' : 'Passwort kopiert.');
+          setTimeout(function () { if (label) label.textContent = 'Kopieren'; btn.classList.remove('done'); }, 1800);
+        }).catch(function () { window.biberToast('Kopieren nicht möglich. Bitte abschreiben.'); });
+      });
+    });
+
+    var revealBtn = card.querySelector('[data-reveal]');
+    if (revealBtn) revealBtn.addEventListener('click', function () {
+      var out = card.querySelector('[data-field="password"] [data-value]');
+      var lbl = revealBtn.querySelector('.lbl');
+      var hidden = out.classList.toggle('is-hidden');
+      if (hidden) out.textContent = '••••••••';
+      else decode(out, out.getAttribute('data-secret'), 650);
+      revealBtn.setAttribute('aria-pressed', String(!hidden));
+      if (lbl) lbl.textContent = hidden ? 'Anzeigen' : 'Verbergen';
+    });
+
+    var printBtn = card.querySelector('[data-print]');
+    if (printBtn) printBtn.addEventListener('click', function () { window.print(); });
   }
 
-  card.querySelectorAll('[data-copy]').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      var field = btn.getAttribute('data-copy');
-      var label = btn.querySelector('.lbl');
-      copyText(valueOf(field)).then(function () {
-        btn.classList.add('done');
-        if (label) label.textContent = 'Kopiert';
-        btn.closest('.field').classList.add('is-done');
-        updateProgress();
-        window.biberToast(field === 'username' ? 'Benutzername kopiert.' : 'Passwort kopiert.');
-        setTimeout(function () { if (label) label.textContent = 'Kopieren'; btn.classList.remove('done'); }, 1800);
-      }).catch(function () { window.biberToast('Kopieren nicht möglich. Bitte abschreiben.'); });
-    });
-  });
-
-  var revealBtn = card.querySelector('[data-reveal]');
-  if (revealBtn) revealBtn.addEventListener('click', function () {
-    var out = card.querySelector('[data-field="password"] [data-value]');
-    var lbl = revealBtn.querySelector('.lbl');
-    var hidden = out.classList.toggle('is-hidden');
-    if (hidden) out.textContent = '••••••••';
-    else decode(out, out.getAttribute('data-secret'), 650);
-    revealBtn.setAttribute('aria-pressed', String(!hidden));
-    if (lbl) lbl.textContent = hidden ? 'Anzeigen' : 'Verbergen';
-  });
-
-  var printBtn = card.querySelector('[data-print]');
-  if (printBtn) printBtn.addEventListener('click', function () { window.print(); });
+  document.querySelectorAll('[data-cred]').forEach(initCard);
 })();

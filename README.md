@@ -10,6 +10,12 @@ Schülerinnen und Schüler melden sich mit ihrem **IServ-Konto (Single-Sign-On, 
 - Phasenkarte mit Countdown bis zu den Biberwochen und Zeitleiste; Zugangskarte druckbar.
 - Ohne hinterlegte Daten erscheint ein freundlicher Hinweis an die Lehrkraft.
 
+**Teamteilnahme an einem Rechner**
+- Unter den eigenen Zugangsdaten: **„Teampartner:in anmelden“**. IServ wird mit `prompt=login` aufgerufen und fragt erneut nach Benutzername und Passwort – die zweite Person meldet sich mit ihrem eigenen IServ-Konto an. Die erste Person bleibt im Portal angemeldet; darunter erscheinen die Biber-Zugangsdaten der zweiten Person (kopierbar, Passwort verdeckt).
+- „Direkt einloggen“ meldet die erste Person beim Biber an; die Daten der zweiten Person werden dort beim Start als Team eingetragen.
+- Meldet IServ trotzdem wieder die erste Person (bestehende IServ-Sitzung), zeigt das Portal eine Anleitung: in einem neuen Tab in IServ abmelden – das Portal bleibt angemeldet – und erneut versuchen.
+- Die Teampartner:in wird nur in der Sitzung gehalten (höchstens 3 Stunden), lässt sich entfernen und verschwindet beim Abmelden. Beim Abmelden bietet das Portal zusätzlich „In IServ abmelden“ an (gemeinsame Rechner).
+
 **Zugangskarten für Lehrkräfte** (Menüpunkt „Karten“)
 - Lehrkräfte werden über IServ erkannt: Rolle bzw. Gruppe „Lehrer“ (Scope `iserv:roles`, siehe `TEACHER_ROLES`). Zusätzlich gelten alle `ADMIN_ACCOUNTS` und `TEACHER_ACCOUNTS`.
 - Eine oder mehrere Gruppen wählen → druckfertiger DIN-A4-Bogen mit 8, 10 oder 12 Karten pro Blatt, Schnittlinien, Schullogo, Name, Gruppe, Benutzername, Passwort und Anmeldeadresse; auf Wunsch beginnt jede Gruppe auf einem neuen Blatt.

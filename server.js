@@ -144,18 +144,29 @@ export function createApp(cfg = loadConfig()) {
     }
     next();
   };
+  // Teampartner:in bleibt höchstens 3 Stunden in der Sitzung (eine Biber-Runde dauert 40 Minuten)
+  const TEAM_MAX_AGE = 3 * 60 * 60 * 1000;
+  const iservLogoutUrl = async () => {
+    try { return (await oidc.discover()).end_session_endpoint || ''; } catch { return ''; }
+  };
   const actor = (req) => req.session.user?.account || 'unbekannt';
   const setFlash = (req, type, text) => { req.session.flash = { type, text }; };
   const takeFlash = (req) => { const f = req.session.flash; req.session.flash = null; return f; };
 
-  function establishSession(req, claims) {
+  function identityFromClaims(claims) {
     const account = normalizeAccount(claims[cfg.oidc.accountClaim] || claims.preferred_username || claims.email);
     if (!account) throw new Error(`IServ hat keinen Accountnamen geliefert (Claim „${cfg.oidc.accountClaim}“).`);
     const name = claims.name || [claims.given_name, claims.family_name].filter(Boolean).join(' ') || account;
+    return { account, name, givenName: claims.given_name || '' };
+  }
+
+  function establishSession(req, claims) {
+    const { account, name, givenName } = identityFromClaims(claims);
+    req.session.teammate = null;
     req.session.user = {
       account,
       name,
-      givenName: claims.given_name || '',
+      givenName,
       isAdmin: cfg.admins.has(account),
       isTeacher: detectTeacher(claims, account, cfg),
       roles: roleNames(claims),
@@ -165,7 +176,7 @@ export function createApp(cfg = loadConfig()) {
   // ---------- Öffentliche Routen ----------
   app.get('/healthz', (req, res) => res.json({ ok: true }));
 
-  app.get('/', (req, res) => {
+  app.get('/', async (req, res) => {
     const user = req.session.user;
     if (!user) {
       const error = req.session.loginError; req.session.loginError = null;
@@ -174,7 +185,17 @@ export function createApp(cfg = loadConfig()) {
     const cred = store.byAccount(user.account);
     const settings = store.settings;
     if (cred && settings.credentialsVisible) store.markViewed(cred.id, viewBucket(currentPhase(settings)));
-    render(req, res, { title: 'Meine Zugangsdaten', page: 'student', body: studentPage({ cfg, user, cred, settings, phase: currentPhase(settings) }) });
+    // Teampartner:in (zweite Person am selben Rechner, eigene IServ-Anmeldung)
+    let mate = req.session.teammate || null;
+    if (mate && Date.now() - mate.at > TEAM_MAX_AGE) mate = req.session.teammate = null;
+    const team = {
+      mate,
+      cred: mate ? store.byAccount(mate.account) : null,
+      error: req.session.teamError || null,
+      logoutUrl: await iservLogoutUrl(),
+    };
+    req.session.teamError = null;
+    render(req, res, { title: 'Meine Zugangsdaten', page: 'student', body: studentPage({ cfg, user, cred, settings, phase: currentPhase(settings), team, csrf: req.session.csrf }) });
   });
 
   // ---------- IServ-Anmeldung ----------
@@ -190,6 +211,24 @@ export function createApp(cfg = loadConfig()) {
     }
   });
 
+  // Zweite Person meldet sich an – die Sitzung der ersten bleibt bestehen
+  app.get('/auth/team', requireUser, async (req, res) => {
+    try {
+      const { url, state, nonce, verifier } = await oidc.beginLogin({ forceLogin: true });
+      req.session.oidc = { state, nonce, verifier, at: Date.now(), team: true };
+      res.redirect(url);
+    } catch (err) {
+      console.error('[auth] Team-Login-Start fehlgeschlagen:', err);
+      req.session.teamError = { kind: 'unreachable' };
+      res.redirect('/#team');
+    }
+  });
+
+  app.post('/team/remove', requireUser, checkCsrf, (req, res) => {
+    req.session.teammate = null;
+    res.redirect('/');
+  });
+
   app.get('/auth/callback', async (req, res) => {
     const pending = req.session.oidc;
     req.session.oidc = null;
@@ -200,6 +239,19 @@ export function createApp(cfg = loadConfig()) {
       }
       if (Date.now() - pending.at > 10 * 60 * 1000) throw new Error('Anmeldevorgang abgelaufen.');
       const claims = await oidc.finishLogin({ code: String(req.query.code || ''), verifier: pending.verifier, nonce: pending.nonce });
+      if (pending.team && req.session.user) {
+        const mate = identityFromClaims(claims);
+        if (mate.account === req.session.user.account) {
+          // IServ hat nicht neu gefragt, sondern die bestehende Sitzung genutzt
+          req.session.teamError = { kind: 'same', account: mate.account };
+        } else {
+          req.session.teammate = { ...mate, at: Date.now() };
+          const mateCred = store.byAccount(mate.account);
+          const s = store.settings;
+          if (mateCred && s.credentialsVisible) store.markViewed(mateCred.id, viewBucket(currentPhase(s)));
+        }
+        return res.redirect('/#team');
+      }
       establishSession(req, claims);
       req.session.csrf = crypto.randomBytes(24).toString('base64url'); // neue Sitzung, neues Token
       const u = req.session.user;
@@ -207,6 +259,10 @@ export function createApp(cfg = loadConfig()) {
       res.redirect(u.isAdmin && !own ? '/admin' : u.isTeacher && !own ? '/karten' : '/');
     } catch (err) {
       console.error('[auth] Callback fehlgeschlagen:', err.message);
+      if (pending?.team && req.session.user) {
+        req.session.teamError = { kind: 'failed', hint: loginHint(err.message) };
+        return res.redirect('/#team');
+      }
       req.session.loginError = `Anmeldung hat nicht geklappt. ${loginHint(err.message)}`;
       res.redirect('/');
     }
@@ -219,9 +275,14 @@ export function createApp(cfg = loadConfig()) {
     });
   }
 
-  app.post('/logout', checkCsrf, (req, res) => {
+  app.post('/logout', checkCsrf, async (req, res) => {
     req.session = null;
-    res.type('html').send(layout({ cfg, title: 'Abgemeldet', body: messagePage({ title: 'Bis bald.', text: 'Im Portal abgemeldet. IServ bleibt angemeldet.', action: { href: '/', label: 'Startseite' } }) }));
+    const logoutUrl = await iservLogoutUrl();
+    res.type('html').send(layout({ cfg, title: 'Abgemeldet', body: messagePage({
+      title: 'Bis bald.',
+      text: 'Im Portal abgemeldet. Am gemeinsamen Rechner bitte auch in IServ abmelden.',
+      action: logoutUrl ? { href: logoutUrl, label: 'In IServ abmelden' } : { href: '/', label: 'Startseite' },
+    }) }));
   });
 
   // ---------- Verwaltung ----------
