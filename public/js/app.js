@@ -243,4 +243,20 @@
   }
 
   document.querySelectorAll('[data-cred]').forEach(initCard);
+
+  // Team: nach „1. Direkt einloggen“ auf Schritt 2 hinweisen
+  var teamJoin = document.querySelector('[data-team-join]');
+  var directLogin = document.querySelector('[data-direct-login]');
+  if (teamJoin && directLogin) {
+    directLogin.addEventListener('submit', function () {
+      setTimeout(function () {
+        teamJoin.classList.add('is-next');
+        window.biberToast('Angemeldet? Jetzt Schritt 2: ins Team eintragen.');
+      }, 600);
+    });
+    teamJoin.addEventListener('submit', function () {
+      teamJoin.classList.remove('is-next');
+      teamJoin.classList.add('is-done');
+    });
+  }
 })();

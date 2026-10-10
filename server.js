@@ -14,7 +14,7 @@ import { Store } from './lib/store.js';
 import { createOidcClient } from './lib/oidc.js';
 import { parseCredentialFile, parseGroupFile } from './lib/importer.js';
 import { matchCredentials } from './lib/matching.js';
-import { currentPhase, PHASES, contestYear, viewBucket } from './lib/phase.js';
+import { currentPhase, PHASES, contestYear, viewBucket, AGE_GROUPS, VIEW_BUCKETS, teamGroupId, teamJoinUrl } from './lib/phase.js';
 import { detectTeacher, roleNames, groupsOf, credentialsForGroups } from './lib/teacher.js';
 import { teacherPage, cardsSheet, LAYOUTS } from './lib/teacher-views.js';
 import { layout, landingPage, studentPage, messagePage } from './lib/views.js';
@@ -193,7 +193,13 @@ export function createApp(cfg = loadConfig()) {
       cred: mate ? store.byAccount(mate.account) : null,
       error: req.session.teamError || null,
       logoutUrl: await iservLogoutUrl(),
+      joinUrl: '',
     };
+    // Teampartner:in direkt beim Biber eintragen: Gruppe der ersten Person, Nummer aus den Einstellungen
+    if (mate && cred && settings.directLogin) {
+      const grpId = teamGroupId(settings, currentPhase(settings), cred);
+      if (grpId) team.joinUrl = teamJoinUrl(settings.loginUrl, grpId);
+    }
     req.session.teamError = null;
     render(req, res, { title: 'Meine Zugangsdaten', page: 'student', body: studentPage({ cfg, user, cred, settings, phase: currentPhase(settings), team, csrf: req.session.csrf }) });
   });
@@ -454,6 +460,17 @@ export function createApp(cfg = loadConfig()) {
       try { const x = new URL(b[u]); if (x.protocol !== 'https:') throw 0; } catch { errors.push(`${u === 'loginUrl' ? 'Anmelde-Adresse' : 'Schnupper-Adresse'} muss eine https-Adresse sein.`); }
     }
     const phaseMode = b.phaseMode === 'auto' || PHASES[b.phaseMode] ? b.phaseMode : 'auto';
+    // Gruppen-Nummern für die Teamanmeldung (nur Ziffern); fehlen die Felder, bleiben die bisherigen
+    const teamGroups = {};
+    for (const bucket of Object.keys(VIEW_BUCKETS)) {
+      teamGroups[bucket] = {};
+      for (const g of AGE_GROUPS) {
+        const key = `tg_${bucket}_${g}`;
+        const v = b[key] === undefined ? store.settings.teamGroups?.[bucket]?.[g] || '' : String(b[key]).trim();
+        if (v && !/^\d{1,10}$/.test(v)) errors.push(`Gruppen-Nummer ${VIEW_BUCKETS[bucket]}, Stufe ${g}: nur Ziffern.`);
+        teamGroups[bucket][g] = v;
+      }
+    }
     if (errors.length) {
       setFlash(req, 'error', errors.join(' '));
       return res.redirect('/admin#einstellungen');
@@ -469,6 +486,7 @@ export function createApp(cfg = loadConfig()) {
       notice: String(b.notice || '').slice(0, 300).trim(),
       credentialsVisible: b.credentialsVisible === '1',
       directLogin: b.directLogin === '1',
+      teamGroups,
     }, actor(req));
     setFlash(req, 'success', 'Einstellungen gespeichert.');
     res.redirect('/admin#einstellungen');

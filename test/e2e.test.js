@@ -99,7 +99,7 @@ test('kompletter Ablauf', async () => {
   assert.equal(page.res.headers.get('cache-control'), 'no-store');
   assert.match(page.res.headers.get('content-security-policy'), /script-src 'self'/);
   // Direkt-Login: Formular an die Biber-Anmeldeseite, von der CSP erlaubt
-  assert.match(page.text, /<form class="go" method="post" action="https:\/\/wettbewerb\.informatik-biber\.de\/index\.php\?action=login" target="_blank"/);
+  assert.match(page.text, /<form class="go" method="post" action="https:\/\/wettbewerb\.informatik-biber\.de\/index\.php\?action=login" target="biber"/);
   assert.match(page.text, /name="username" value="biber-erika"/);
   assert.match(page.res.headers.get('content-security-policy'), /form-action 'self' https:\/\/wettbewerb\.informatik-biber\.de/);
 
@@ -287,6 +287,31 @@ test('Team: zweite Person meldet sich am selben Rechner mit eigenem IServ-Konto 
   const direct = page.text.match(/<form class="go"[\s\S]*?<\/form>/)[0];
   assert.match(direct, /value="biber-erika"/);
   assert.ok(!direct.includes('biber-lena'));
+
+  // Ohne Gruppen-Nummer für die Altersgruppe: nur zum Kopieren
+  assert.ok(!page.text.includes('data-team-join'));
+  assert.match(page.text, /Melde deine\(n\) Team-Partner\(in\) an/);
+
+  // Admin trägt Gruppen-Nummern ein (Erika: Klasse 10a → Altersgruppe 9–10)
+  const admin = browser();
+  let ap = await login(admin, 'andre.bodendiek');
+  ap = await admin.go('/admin');
+  const settingsBody = (extra) => new URLSearchParams({ _csrf: csrfOf(ap.text), phaseMode: 'auto', schnupperStart: '2026-09-14', schnupperEnd: '2026-11-06', contestStart: '2026-11-09', contestEnd: '2026-11-20', loginUrl: 'https://wettbewerb.informatik-biber.de/index.php?action=login', schnupperUrl: 'https://wettbewerb.informatik-biber.de/index.php?action=login', notice: '', credentialsVisible: '1', directLogin: '1', ...extra });
+  ap = await admin.go('/admin/settings', { method: 'POST', headers: form, body: settingsBody({ 'tg_schnupper_9-10': '12x' }) });
+  assert.match(ap.text, /nur Ziffern/);
+  ap = await admin.go('/admin/settings', { method: 'POST', headers: form, body: settingsBody({ 'tg_schnupper_9-10': '1234', 'tg_wettbewerb_9-10': '5678' }) });
+  assert.match(ap.text, /Einstellungen gespeichert/);
+  assert.match(ap.text, /name="tg_schnupper_9-10" value="1234"/);
+
+  page = await pc.go('/');
+  const join = page.text.match(/<form class="go team-go"[\s\S]*?<\/form>/)[0];
+  assert.match(join, /action="https:\/\/wettbewerb\.informatik-biber\.de\/index\.php\?action=user_join&amp;grp_id=(1234|5678)" target="biber"/);
+  assert.match(join, /name="team_username" value="biber-lena"/);
+  assert.match(join, /name="team_password" value="Neu-Pw-2"/);
+  assert.match(join, /name="team_login" value="ins Team!"/);
+  assert.match(page.text, /1\. Direkt einloggen/);
+  assert.match(page.text, /unterschiedlichen Altersgruppen \(9–10 und 7–8\)/); // Lena: 8c
+  assert.match(page.res.headers.get('content-security-policy'), /form-action 'self' https:\/\/wettbewerb\.informatik-biber\.de/);
 
   // Entfernen
   page = await pc.go('/team/remove', { method: 'POST', headers: form, body: new URLSearchParams({ _csrf: csrfOf(page.text) }) });

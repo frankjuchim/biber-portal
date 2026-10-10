@@ -632,6 +632,14 @@ table.data.compact td { padding: 9px 8px; }
 .team-alert ol { margin: 8px 0 0; padding-left: 20px; }
 .team-alert a { color: inherit; text-decoration: underline; }
 .team-hint { margin-left: 60px; }
-.team-actions { margin: 10px 0 0; font-size: .9rem; }
+.team-actions { margin: 8px 0 0; }
+.cred.team .team-actions { margin-left: 60px; }
+@media (max-width: 640px) { .cred.team .team-actions { margin-left: 0; } }
 @media (max-width: 640px) { .team-hint { margin-left: 0; } }
 .team-hint .link, .team-actions .link { font-size: .84rem; }
+.team-go { padding-top: 22px; border-top: 1px solid var(--line); margin-top: 6px; }
+.team-go.is-next .btn { box-shadow: 0 0 0 4px rgba(var(--a1-rgb), .35), 0 16px 40px -12px rgba(var(--a1-rgb), .6); animation: nudge 1.6s var(--ease) 2; }
+.team-go.is-done .idx { color: var(--ok); }
+.team-warn { color: var(--warn); }
+@keyframes nudge { 50% { transform: translateY(-2px) scale(1.02); } }
+@media (max-width: 640px) { .team-go .btn { width: 100%; white-space: normal; } }
