@@ -244,32 +244,6 @@
 
   document.querySelectorAll('[data-cred]').forEach(initCard);
 
-  // Team: vor der Anmeldung der zweiten Person IServ an diesem Rechner abmelden (IServ ignoriert prompt=login).
-  // Kleines Fenster mit der IServ-Abmeldung; IServ springt zu /auth/team-ready zurück, das meldet „fertig“.
-  // Kommt keine Meldung (Rücksprung nicht erlaubt), geht es nach 7 Sekunden trotzdem weiter.
-  var teamLogin = document.querySelector('[data-team-login][data-logout]');
-  if (teamLogin) teamLogin.addEventListener('click', function (e) {
-    var logoutUrl = teamLogin.getAttribute('data-logout');
-    var w = Math.min(520, screen.availWidth || 520), h = Math.min(640, screen.availHeight || 640);
-    var popup = window.open(logoutUrl, 'iserv-abmelden', 'popup=yes,width=' + w + ',height=' + h);
-    if (!popup) return; // Pop-ups blockiert: normaler Link (/auth/team), Hinweis folgt ggf. im Portal
-    e.preventDefault();
-    teamLogin.classList.add('is-busy');
-    teamLogin.setAttribute('aria-busy', 'true');
-    window.biberToast('IServ wird an diesem Rechner abgemeldet …');
-    var done = false;
-    function proceed() {
-      if (done) return;
-      done = true;
-      try { popup.close(); } catch (err) { /* egal */ }
-      window.location.href = '/auth/team';
-    }
-    window.addEventListener('message', function (ev) {
-      if (ev.origin === window.location.origin && ev.data === 'biber-team-ready') proceed();
-    });
-    setTimeout(proceed, 7000);
-  });
-
   // Team: nach „1. Direkt einloggen“ auf Schritt 2 hinweisen
   var teamJoin = document.querySelector('[data-team-join]');
   var directLogin = document.querySelector('[data-direct-login]');

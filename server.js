@@ -85,8 +85,6 @@ export function createApp(cfg = loadConfig()) {
         },
       },
       crossOriginEmbedderPolicy: false,
-      // Das Abmelde-Fenster der Teamanmeldung (IServ → /auth/team-ready) muss dem Portal Bescheid geben können
-      crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
       referrerPolicy: { policy: 'no-referrer' },
     })
   );
@@ -151,15 +149,20 @@ export function createApp(cfg = loadConfig()) {
   const iservLogoutUrl = async () => {
     try { return (await oidc.discover()).end_session_endpoint || ''; } catch { return ''; }
   };
-  // IServ-Abmeldung, die danach zum Portal zurückspringt (für die Teamanmeldung)
-  const teamLogoutUrl = async () => {
-    const base = await iservLogoutUrl();
-    if (!base) return '';
-    const u = new URL(base);
-    u.searchParams.set('post_logout_redirect_uri', `${cfg.baseUrl}/auth/team-ready`);
-    u.searchParams.set('client_id', cfg.oidc.clientId);
-    return u.toString();
+  // Team-Codes: Die zweite Person meldet sich in einem eigenen (privaten) Fenster oder am Handy an und
+  // erzeugt einen kurzen Code; die erste Person löst ihn ein. Nur im Speicher, 10 Minuten, einmalig.
+  const TEAM_CODE_TTL = 10 * 60 * 1000;
+  const TEAM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // ohne 0/O, 1/I
+  const teamCodes = new Map(); // code -> { account, name, givenName, exp }
+  const pruneTeamCodes = () => { const now = Date.now(); for (const [k, v] of teamCodes) if (v.exp < now) teamCodes.delete(k); };
+  const newTeamCode = () => {
+    let code;
+    do code = Array.from({ length: 6 }, () => TEAM_CODE_ALPHABET[crypto.randomInt(TEAM_CODE_ALPHABET.length)]).join('');
+    while (teamCodes.has(code));
+    return code;
   };
+  // Eingabe tolerant: Groß-/Kleinschreibung, Bindestrich und Leerzeichen egal
+  const normTeamCode = (v) => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
   const actor = (req) => req.session.user?.account || 'unbekannt';
   const setFlash = (req, type, text) => { req.session.flash = { type, text }; };
   const takeFlash = (req) => { const f = req.session.flash; req.session.flash = null; return f; };
@@ -196,7 +199,7 @@ export function createApp(cfg = loadConfig()) {
     const cred = store.byAccount(user.account);
     const settings = store.settings;
     if (cred && settings.credentialsVisible) store.markViewed(cred.id, viewBucket(currentPhase(settings)));
-    // Teampartner:in (zweite Person am selben Rechner, eigene IServ-Anmeldung)
+    // Teampartner:in (zweite Person, per Team-Code hinzugefügt)
     let mate = req.session.teammate || null;
     if (mate && Date.now() - mate.at > TEAM_MAX_AGE) mate = req.session.teammate = null;
     const team = {
@@ -204,9 +207,14 @@ export function createApp(cfg = loadConfig()) {
       cred: mate ? store.byAccount(mate.account) : null,
       error: req.session.teamError || null,
       logoutUrl: await iservLogoutUrl(),
-      teamLogoutUrl: await teamLogoutUrl(),
+      myCode: null,
       joinUrl: '',
     };
+    // eigener Team-Code (diese Person ist die zweite im Team und gibt den Code weiter)
+    pruneTeamCodes();
+    const mine = req.session.myTeamCode;
+    if (mine && teamCodes.get(mine.code)?.account === user.account) team.myCode = mine;
+    else req.session.myTeamCode = null;
     // Teampartner:in direkt beim Biber eintragen: Gruppe der ersten Person, Nummer aus den Einstellungen
     if (mate && cred && settings.directLogin) {
       const grpId = teamGroupId(settings, currentPhase(settings), cred);
@@ -229,23 +237,50 @@ export function createApp(cfg = loadConfig()) {
     }
   });
 
-  // Zweite Person meldet sich an – die Sitzung der ersten bleibt bestehen
-  app.get('/auth/team', requireUser, async (req, res) => {
-    try {
-      const { url, state, nonce, verifier } = await oidc.beginLogin({ forceLogin: true });
-      req.session.oidc = { state, nonce, verifier, at: Date.now(), team: true };
-      res.redirect(url);
-    } catch (err) {
-      console.error('[auth] Team-Login-Start fehlgeschlagen:', err);
-      req.session.teamError = { kind: 'unreachable' };
-      res.redirect('/#team');
+  // Team-Code erzeugen (zweite Person, angemeldet mit ihrem eigenen IServ-Konto)
+  app.post('/team/code', requireUser, checkCsrf, (req, res) => {
+    const user = req.session.user;
+    const cred = store.byAccount(user.account);
+    if (!cred || !store.settings.credentialsVisible) {
+      req.session.teamError = { kind: 'nocred' };
+      return res.redirect('/#team');
     }
+    pruneTeamCodes();
+    for (const [k, v] of teamCodes) if (v.account === user.account) teamCodes.delete(k); // nur ein gültiger Code je Person
+    const code = newTeamCode();
+    const exp = Date.now() + TEAM_CODE_TTL;
+    teamCodes.set(code, { account: user.account, name: user.name, givenName: user.givenName, exp });
+    req.session.myTeamCode = { code, exp };
+    res.redirect('/#team');
   });
 
-  // Rücksprung nach der IServ-Abmeldung: meldet dem Portal-Fenster „fertig“ (Popup) oder geht direkt weiter
-  app.get('/auth/team-ready', (req, res) => {
-    res.set('Cross-Origin-Opener-Policy', 'unsafe-none'); // Verbindung zum Portal-Fenster behalten
-    res.type('html').send(`<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>Weiter …</title><script src="/js/team-ready.js"></script></head><body><p>IServ ist abgemeldet. Dieses Fenster schließt sich gleich – sonst bitte schließen und im Portal weitermachen.</p></body></html>`);
+  // Team-Code einlösen (erste Person): Daten der zweiten Person erscheinen in dieser Sitzung
+  app.post('/team/join', requireUser, checkCsrf, (req, res) => {
+    const now = Date.now();
+    const tries = (req.session.teamTries || []).filter((t) => now - t < TEAM_CODE_TTL);
+    if (tries.length >= 8) {
+      req.session.teamError = { kind: 'tries' };
+      return res.redirect('/#team');
+    }
+    pruneTeamCodes();
+    const code = normTeamCode(req.body.code);
+    const entry = teamCodes.get(code);
+    if (!entry) {
+      req.session.teamTries = [...tries, now];
+      req.session.teamError = { kind: 'code' };
+      return res.redirect('/#team');
+    }
+    if (entry.account === req.session.user.account) {
+      req.session.teamError = { kind: 'self' };
+      return res.redirect('/#team');
+    }
+    teamCodes.delete(code); // einmalig
+    req.session.teamTries = [];
+    req.session.teammate = { account: entry.account, name: entry.name, givenName: entry.givenName, at: now };
+    const mateCred = store.byAccount(entry.account);
+    const s = store.settings;
+    if (mateCred && s.credentialsVisible) store.markViewed(mateCred.id, viewBucket(currentPhase(s)));
+    res.redirect('/#team');
   });
 
   app.post('/team/remove', requireUser, checkCsrf, (req, res) => {
@@ -263,19 +298,6 @@ export function createApp(cfg = loadConfig()) {
       }
       if (Date.now() - pending.at > 10 * 60 * 1000) throw new Error('Anmeldevorgang abgelaufen.');
       const claims = await oidc.finishLogin({ code: String(req.query.code || ''), verifier: pending.verifier, nonce: pending.nonce });
-      if (pending.team && req.session.user) {
-        const mate = identityFromClaims(claims);
-        if (mate.account === req.session.user.account) {
-          // IServ hat nicht neu gefragt, sondern die bestehende Sitzung genutzt
-          req.session.teamError = { kind: 'same', account: mate.account };
-        } else {
-          req.session.teammate = { ...mate, at: Date.now() };
-          const mateCred = store.byAccount(mate.account);
-          const s = store.settings;
-          if (mateCred && s.credentialsVisible) store.markViewed(mateCred.id, viewBucket(currentPhase(s)));
-        }
-        return res.redirect('/#team');
-      }
       establishSession(req, claims);
       req.session.csrf = crypto.randomBytes(24).toString('base64url'); // neue Sitzung, neues Token
       const u = req.session.user;
@@ -283,10 +305,6 @@ export function createApp(cfg = loadConfig()) {
       res.redirect(u.isAdmin && !own ? '/admin' : u.isTeacher && !own ? '/karten' : '/');
     } catch (err) {
       console.error('[auth] Callback fehlgeschlagen:', err.message);
-      if (pending?.team && req.session.user) {
-        req.session.teamError = { kind: 'failed', hint: loginHint(err.message) };
-        return res.redirect('/#team');
-      }
       req.session.loginError = `Anmeldung hat nicht geklappt. ${loginHint(err.message)}`;
       res.redirect('/');
     }

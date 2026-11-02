@@ -643,4 +643,13 @@ table.data.compact td { padding: 9px 8px; }
 .team-warn { color: var(--warn); }
 @keyframes nudge { 50% { transform: translateY(-2px) scale(1.02); } }
 @media (max-width: 640px) { .team-go .btn { width: 100%; white-space: normal; } }
-[data-team-login].is-busy { opacity: .6; pointer-events: none; }
+
+.team-steps { margin: 8px 0 0; padding-left: 20px; color: var(--ink-2); display: grid; gap: 4px; }
+.team-cols { flex: 1 1 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.team-col { display: grid; gap: 10px; align-content: start; padding: 18px; border-radius: var(--r-md); background: var(--field); }
+.team-col .k { margin: 0; }
+.team-join-form { display: flex; gap: 8px; flex-wrap: wrap; }
+.team-join-form input { flex: 1 1 140px; text-transform: uppercase; letter-spacing: .12em; font-size: 1.1rem; }
+.team-code .v { font-size: clamp(1.8rem, 5vw, 2.4rem); letter-spacing: .14em; }
+.team-code p { margin: 6px 0 0; }
+@media (max-width: 760px) { .team-cols { grid-template-columns: 1fr; } }

@@ -262,44 +262,53 @@ test('Lehrkraft (IServ-Rolle) druckt Zugangskarten einer Gruppe', async () => {
   assert.match(page.text, /Gruppen ergänzt: 1 Zugänge, 1 Accounts ohne Zugang/);
 });
 
-test('Team: zweite Person meldet sich am selben Rechner mit eigenem IServ-Konto an', async () => {
+test('Team: zweite Person gibt per Team-Code ihre Zugangsdaten frei', async () => {
   const form = { 'content-type': 'application/x-www-form-urlencoded' };
+  const post = (b, url, page, data) => b.go(url, { method: 'POST', headers: form, body: new URLSearchParams({ _csrf: csrfOf(page.text), ...data }) });
+
+  // Erste Person (normales Fenster)
   const pc = browser();
   let page = await login(pc, 'erika.musterfrau');
   assert.match(page.text, /biber-erika/);
-  assert.match(page.text, /Teampartner:in anmelden/);
+  assert.match(page.text, /Team-Code anzeigen/);
+  assert.match(page.text, /privates Fenster/);
+  assert.match(page.text, /localhost:3100/); // Portal-Adresse für das private Fenster
 
-  // Vor der Team-Anmeldung wird IServ abgemeldet – mit Rücksprung zum Portal
-  const logoutAttr = page.text.match(/data-team-login data-logout="([^"]+)"/)[1].replace(/&amp;/g, '&');
-  const lu = new URL(logoutAttr);
-  assert.equal(lu.origin + lu.pathname, 'http://localhost:4100/iserv/auth/logout');
-  assert.equal(lu.searchParams.get('post_logout_redirect_uri'), 'http://localhost:3100/auth/team-ready');
-  assert.equal(lu.searchParams.get('client_id'), 'biber-portal');
-  const back = await pc.go(logoutAttr, { noFollow: true });
-  assert.equal(back.res.headers.get('location'), 'http://localhost:3100/auth/team-ready');
-  const ready = await pc.go('/auth/team-ready');
-  assert.match(ready.text, /<script src="\/js\/team-ready\.js"><\/script>/);
-  page = await pc.go('/'); // erste Person weiterhin angemeldet
-  assert.match(page.text, /Hallo, Erika\./);
+  // Zweite Person (privates Fenster = eigene Cookies) erzeugt einen Code
+  const priv = browser();
+  let p2 = await login(priv, 'lena.ohnedaten');
+  p2 = await post(priv, '/team/code', p2, {});
+  const shown = p2.text.match(/<output class="v mono">([A-Z0-9]{3})-([A-Z0-9]{3})<\/output>/);
+  assert.ok(shown, 'Team-Code wird angezeigt');
+  const code = shown[1] + shown[2];
+  assert.ok(!/[01IO]/.test(code));
+  assert.match(p2.text, /Gültig bis \d{2}:\d{2} Uhr/);
 
-  // IServ soll trotz bestehender Sitzung neu nach dem Passwort fragen
-  const start = await pc.go('/auth/team', { noFollow: true });
-  const loc = start.res.headers.get('location');
-  assert.match(loc, /prompt=login/);
-  assert.match(loc, /max_age=0/);
+  // Eigener Code wird abgewiesen
+  const self = await post(priv, '/team/join', p2, { code });
+  assert.match(self.text, /dein eigener Code/);
 
-  // Zweite Person: lena (hat Zugangsdaten aus dem Formular-Test)
-  page = await login(pc, 'lena.ohnedaten', '/auth/team');
+  // Falscher Code
+  page = await post(pc, '/team/join', page, { code: 'ZZZZZZ' });
+  assert.match(page.text, /unbekannt oder abgelaufen/);
+
+  // Richtiger Code (tolerant: klein, mit Bindestrich und Leerzeichen)
+  page = await post(pc, '/team/join', page, { code: ` ${code.slice(0, 3).toLowerCase()}-${code.slice(3).toLowerCase()} ` });
   assert.match(page.text, /Hallo, Erika\./); // erste Person bleibt angemeldet
-  assert.match(page.text, /biber-erika/);
   assert.match(page.text, /Teampartner:in · Lena Ohnedaten/);
   assert.match(page.text, /biber-lena/);
   assert.match(page.text, /Eure Zugangsdaten/);
   assert.equal((page.text.match(/data-cred/g) || []).length, 2);
-  // Direkt-Login sendet nur die Daten der ersten Person
   const direct = page.text.match(/<form class="go"[\s\S]*?<\/form>/)[0];
   assert.match(direct, /value="biber-erika"/);
   assert.ok(!direct.includes('biber-lena'));
+
+  // Code ist einmalig
+  const again = browser();
+  let p3 = await login(again, 'max.mustermann');
+  p3 = await post(again, '/team/join', p3, { code });
+  assert.match(p3.text, /unbekannt oder abgelaufen/);
+  assert.ok(!p3.text.includes('biber-lena'));
 
   // Ohne Gruppen-Nummer für die Altersgruppe: nur zum Kopieren
   assert.ok(!page.text.includes('data-team-join'));
@@ -323,33 +332,36 @@ test('Team: zweite Person meldet sich am selben Rechner mit eigenem IServ-Konto 
   assert.match(join, /name="team_password" value="Neu-Pw-2"/);
   assert.match(join, /name="team_login" value="ins Team!"/);
   assert.match(page.text, /1\. Direkt einloggen/);
-  assert.match(page.text, /unterschiedlichen Altersgruppen \(9–10 und 7–8\)/); // Lena: 8c
+  assert.match(page.text, /unterschiedlichen Altersgruppen \(9–10 und 7–8\)/);
   assert.match(page.res.headers.get('content-security-policy'), /form-action 'self' https:\/\/wettbewerb\.informatik-biber\.de/);
 
   // Entfernen
-  page = await pc.go('/team/remove', { method: 'POST', headers: form, body: new URLSearchParams({ _csrf: csrfOf(page.text) }) });
+  page = await post(pc, '/team/remove', page, {});
   assert.ok(!page.text.includes('biber-lena'));
-  assert.match(page.text, /Teampartner:in anmelden/);
+  assert.match(page.text, /Code deiner Teampartner:in eingeben/);
 
-  // IServ meldet dieselbe Person erneut → verständlicher Hinweis, keine Vermischung
-  page = await login(pc, 'erika.musterfrau', '/auth/team');
-  assert.match(page.text, /IServ hat wieder dich angemeldet/);
-  assert.equal((page.text.match(/data-cred/g) || []).length, 1);
+  // Schutz gegen Durchprobieren: nach 8 Fehlversuchen gesperrt
+  for (let i = 0; i < 8; i++) page = await post(pc, '/team/join', page, { code: `QQQQQ${'ABCDEFGH'[i]}` });
+  page = await post(pc, '/team/join', page, { code: 'QQQQQQ' });
+  assert.match(page.text, /Zu viele falsche Codes/);
 
-  // Teampartner:in ohne Biber-Zugang
-  page = await login(pc, 'andre.bodendiek', '/auth/team');
-  assert.match(page.text, /Für <code>andre\.bodendiek<\/code> sind noch keine Zugangsdaten hinterlegt/);
+  // Zweite Person ohne Zugangsdaten kann keinen Code erzeugen
+  const nocred = browser();
+  let p4 = await login(nocred, 'andre.bodendiek');
+  p4 = await nocred.go('/');
+  assert.ok(!p4.text.includes('Team-Code anzeigen')); // ohne eigene Zugangsdaten kein Team-Bereich
+  p4 = await post(nocred, '/team/code', p4, {});
+  assert.ok(!/<output class="v mono">/.test(p4.text)); // und auch kein Code
 
-  // Ohne Anmeldung kein Team-Login
+  // Ohne Anmeldung keine Team-Aktionen
   const anon = browser();
-  const r = await anon.go('/auth/team', { noFollow: true });
-  assert.equal(r.res.headers.get('location'), '/');
+  const r = await anon.go('/team/join', { method: 'POST', headers: form, body: 'code=ABCDEF', noFollow: true });
+  assert.ok([302, 403].includes(r.res.status));
 
   // Abmelden entfernt beide
   page = await pc.go('/');
-  page = await pc.go('/logout', { method: 'POST', headers: form, body: new URLSearchParams({ _csrf: csrfOf(page.text) }) });
+  page = await post(pc, '/logout', page, {});
   assert.match(page.text, /auch in IServ abmelden/);
   page = await pc.go('/');
   assert.match(page.text, /Mit IServ anmelden/);
 });
-
