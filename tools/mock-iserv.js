@@ -33,12 +33,20 @@ export async function startMock(port = PORT) {
     token_endpoint: `${ISSUER}/iserv/auth/public/token`,
     userinfo_endpoint: `${ISSUER}/iserv/auth/userinfo`,
     jwks_uri: `${ISSUER}/iserv/auth/public/jwk`,
+    end_session_endpoint: `${ISSUER}/iserv/auth/logout`,
     response_types_supported: ['code'],
     token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
     code_challenge_methods_supported: ['S256'],
   }));
 
   app.get('/iserv/auth/public/jwk', (req, res) => res.json({ keys: [jwk] }));
+
+  // Abmelden (wie IServ): mit post_logout_redirect_uri zurück zur Anwendung
+  app.get('/iserv/auth/logout', (req, res) => {
+    const back = String(req.query.post_logout_redirect_uri || '');
+    if (/^https?:\/\//.test(back)) return res.redirect(back);
+    res.send('<!doctype html><meta charset="utf-8"><title>Mock-IServ</title><p>Abgemeldet.</p>');
+  });
 
   app.get('/iserv/auth/auth', (req, res) => {
     const q = req.query;

@@ -85,6 +85,8 @@ export function createApp(cfg = loadConfig()) {
         },
       },
       crossOriginEmbedderPolicy: false,
+      // Das Abmelde-Fenster der Teamanmeldung (IServ → /auth/team-ready) muss dem Portal Bescheid geben können
+      crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
       referrerPolicy: { policy: 'no-referrer' },
     })
   );
@@ -149,6 +151,15 @@ export function createApp(cfg = loadConfig()) {
   const iservLogoutUrl = async () => {
     try { return (await oidc.discover()).end_session_endpoint || ''; } catch { return ''; }
   };
+  // IServ-Abmeldung, die danach zum Portal zurückspringt (für die Teamanmeldung)
+  const teamLogoutUrl = async () => {
+    const base = await iservLogoutUrl();
+    if (!base) return '';
+    const u = new URL(base);
+    u.searchParams.set('post_logout_redirect_uri', `${cfg.baseUrl}/auth/team-ready`);
+    u.searchParams.set('client_id', cfg.oidc.clientId);
+    return u.toString();
+  };
   const actor = (req) => req.session.user?.account || 'unbekannt';
   const setFlash = (req, type, text) => { req.session.flash = { type, text }; };
   const takeFlash = (req) => { const f = req.session.flash; req.session.flash = null; return f; };
@@ -193,6 +204,7 @@ export function createApp(cfg = loadConfig()) {
       cred: mate ? store.byAccount(mate.account) : null,
       error: req.session.teamError || null,
       logoutUrl: await iservLogoutUrl(),
+      teamLogoutUrl: await teamLogoutUrl(),
       joinUrl: '',
     };
     // Teampartner:in direkt beim Biber eintragen: Gruppe der ersten Person, Nummer aus den Einstellungen
@@ -228,6 +240,12 @@ export function createApp(cfg = loadConfig()) {
       req.session.teamError = { kind: 'unreachable' };
       res.redirect('/#team');
     }
+  });
+
+  // Rücksprung nach der IServ-Abmeldung: meldet dem Portal-Fenster „fertig“ (Popup) oder geht direkt weiter
+  app.get('/auth/team-ready', (req, res) => {
+    res.set('Cross-Origin-Opener-Policy', 'unsafe-none'); // Verbindung zum Portal-Fenster behalten
+    res.type('html').send(`<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>Weiter …</title><script src="/js/team-ready.js"></script></head><body><p>IServ ist abgemeldet. Dieses Fenster schließt sich gleich – sonst bitte schließen und im Portal weitermachen.</p></body></html>`);
   });
 
   app.post('/team/remove', requireUser, checkCsrf, (req, res) => {

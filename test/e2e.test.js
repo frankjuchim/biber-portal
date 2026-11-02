@@ -269,6 +269,19 @@ test('Team: zweite Person meldet sich am selben Rechner mit eigenem IServ-Konto 
   assert.match(page.text, /biber-erika/);
   assert.match(page.text, /Teampartner:in anmelden/);
 
+  // Vor der Team-Anmeldung wird IServ abgemeldet – mit Rücksprung zum Portal
+  const logoutAttr = page.text.match(/data-team-login data-logout="([^"]+)"/)[1].replace(/&amp;/g, '&');
+  const lu = new URL(logoutAttr);
+  assert.equal(lu.origin + lu.pathname, 'http://localhost:4100/iserv/auth/logout');
+  assert.equal(lu.searchParams.get('post_logout_redirect_uri'), 'http://localhost:3100/auth/team-ready');
+  assert.equal(lu.searchParams.get('client_id'), 'biber-portal');
+  const back = await pc.go(logoutAttr, { noFollow: true });
+  assert.equal(back.res.headers.get('location'), 'http://localhost:3100/auth/team-ready');
+  const ready = await pc.go('/auth/team-ready');
+  assert.match(ready.text, /<script src="\/js\/team-ready\.js"><\/script>/);
+  page = await pc.go('/'); // erste Person weiterhin angemeldet
+  assert.match(page.text, /Hallo, Erika\./);
+
   // IServ soll trotz bestehender Sitzung neu nach dem Passwort fragen
   const start = await pc.go('/auth/team', { noFollow: true });
   const loc = start.res.headers.get('location');
